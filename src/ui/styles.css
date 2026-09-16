@@ -1,0 +1,603 @@
+/**
+ * 全部样式。颜色一律走 themes.js 里定义的 CSS 变量，这里不写死任何色值 ——
+ * 换主题只改 :root 上的变量，样式表一行都不用动。
+ *
+ * 排版意图：骰子是主角，UI 是配角。
+ *   顶部 chip 行存在但不亮（描边多、填充少、字号小一档）
+ *   底部只有一条提示；结果卡出来的时候才占位置
+ *   设置收成角落一个圆点
+ * 目标是用户拿起手机时，视线落点是骰子，而不是任何控件。
+ */
+
+/* ── 基础 ───────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-serif: var(--font-ui);
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-serif, var(--font-ui));
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+
+  /* 下拉刷新和橡皮筋回弹会打断投掷手势，必须关掉 */
+  overscroll-behavior: none;
+
+  /* ⚠️ touch-action: none 只放在 #stage 上，不要放在 body 上。
+     touch-action 沿祖先链取交集，body 上一写死，自测输出那一页
+     （.selftest-out，需要滚动）就滚不动了。
+     body 是 overflow:hidden + height:100%，本来也没有可滚的内容 */
+}
+
+body {
+  /* 主题切换时背景色跟着淡，避免和覆盖层错拍 */
+  transition: background-color 300ms linear;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* 关键：不设这个的话，滑动手势会被浏览器当成页面滚动吃掉 */
+  touch-action: none;
+}
+
+/* ── 解锁层 ─────────────────────────────────────────────── */
+
+.gate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  transition: opacity 550ms var(--ease);
+}
+
+.gate.gone {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.start-btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-dim);
+
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+
+  font-family: inherit;
+  font-size: 17px;
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;      /* 抵消字间距在末尾多出的一格，让它真的居中 */
+
+  cursor: pointer;
+  transition: color 400ms var(--ease), border-color 400ms var(--ease),
+    transform 400ms var(--ease);
+}
+
+.start-btn:active {
+  transform: scale(0.94);
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+/* ── 主 UI 容器 ─────────────────────────────────────────── */
+
+.ui {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+
+  padding: calc(var(--safe-top) + 14px) calc(var(--safe-right) + 16px)
+    calc(var(--safe-bottom) + 22px) calc(var(--safe-left) + 16px);
+
+  /* 容器本身不吃手势 —— 空白处的滑动要能穿透到 canvas 上 */
+  pointer-events: none;
+
+  opacity: 0;
+  transition: opacity 700ms var(--ease);
+}
+
+.ui.ready {
+  opacity: 1;
+}
+
+/* ── 顶部：材质 / 颗数 ──────────────────────────────────── */
+
+.ui-top {
+  display: flex;
+  justify-content: center;
+}
+
+.chips {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.chip-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-faint);
+
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+
+  transition: color 250ms var(--ease), border-color 250ms var(--ease),
+    background-color 250ms var(--ease);
+}
+
+.chip:active {
+  background: var(--surface);
+}
+
+/* 选中态靠"亮起来"而不是"填色块"。填色块会跳出来抢骰子的视线 */
+.chip.on {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.chip-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  /* 暗色材质在暗背景上会糊掉，给它一圈极淡的边 */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.count-row {
+  gap: 2px;
+}
+
+.chip.step {
+  min-width: 30px;
+  justify-content: center;
+  padding: 6px 8px;
+  font-size: 15px;
+  color: var(--ink-dim);
+}
+
+.chip.step:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.count-label {
+  min-width: 46px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+}
+
+/* 颗数被选项锁住时整行降一档 —— 让它读起来是"不用你管"，不是"坏了" */
+.count-row.locked {
+  opacity: 0.4;
+}
+
+/* ── 底部：提示 + 结果 ──────────────────────────────────── */
+
+.ui-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+  text-align: center;
+  transition: opacity 400ms var(--ease);
+}
+
+.storage-warn {
+  color: var(--ink-dim);
+  letter-spacing: 0.06em;
+}
+
+/* ── 结果卡 ─────────────────────────────────────────────── */
+
+.result {
+  /* 结果只读，绝不吃手势 —— 用户会想直接在这儿一滑就再掷一次 */
+  pointer-events: none;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 500ms var(--ease), transform 500ms var(--ease);
+}
+
+.result.on {
+  opacity: 1;
+  transform: none;
+}
+
+.result-value {
+  font-size: 64px;
+  line-height: 0.95;
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-verdict {
+  font-size: 17px;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  color: var(--ink-dim);
+}
+
+.result-title {
+  font-size: 19px;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+}
+
+.result-option {
+  font-size: 25px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  max-width: 84vw;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.result-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+.result-sub {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
+.result-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.result-row {
+  display: flex;
+  gap: 18px;
+  align-items: flex-end;
+}
+
+.result-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.cell-value {
+  font-size: 30px;
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.result-tie {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  align-items: stretch;
+  min-width: 62vw;
+}
+
+.tie-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+/* 选项文字可以很长，让它先让位；点数必须完整可读，所以 flex:none */
+.tie-row > span:nth-child(2) {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.tie-value {
+  flex: none;
+  color: var(--ink-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 虚按浮出的名字对照 ─────────────────────────────────── */
+
+.peek {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 20;
+  transform: translate(-50%, -50%) scale(0.97);
+
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+
+  padding: 15px 19px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms var(--ease), transform 180ms var(--ease);
+}
+
+.peek.on {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.peek-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+/* 没起名的降一档，让起了名的更突出 */
+.peek-row.unnamed {
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.peek-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.peek-name {
+  max-width: 56vw;
+  overflow-wrap: anywhere;
+}
+
+/* ── 角落设置按钮 ───────────────────────────────────────── */
+
+.corner-btn {
+  pointer-events: auto;
+  position: absolute;
+  right: calc(var(--safe-right) + 12px);
+  bottom: calc(var(--safe-bottom) + 12px);
+
+  appearance: none;
+  display: grid;
+  place-items: center;
+
+  width: 44px;    /* 44px 是能可靠点中的最小尺寸，别再小了 */
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.corner-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  transition: background-color 250ms var(--ease), transform 250ms var(--ease);
+}
+
+.corner-btn:active .corner-dot {
+  background: var(--ink);
+  transform: scale(1.4);
+}
+
+/* ── 主题交叉淡入覆盖层 ─────────────────────────────────── */
+
+.theme-fade {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 450ms linear;
+}
+
+/* ── 调试面板 ───────────────────────────────────────────── */
+
+.debug {
+  position: fixed;
+  left: calc(var(--safe-left) + 8px);
+  top: calc(var(--safe-top) + 8px);
+  z-index: 60;
+
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #9fe6cb;
+  white-space: pre;
+
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.debug.folded {
+  opacity: 0.35;
+}
+
+/* 帧率掉到 50 以下变黄，45 以下变红。一眼就能看出是哪一台机器不行 */
+.debug[data-fps] {
+  color: #9fe6cb;
+}
+
+/* ── 自测输出 ───────────────────────────────────────────── */
+
+.selftest-out {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+
+  margin: 0;
+  padding: calc(var(--safe-top) + 16px) 16px calc(var(--safe-bottom) + 16px);
+  overflow: auto;
+
+  background: var(--bg);
+  color: var(--ink);
+
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  touch-action: auto;   /* 这一页要能滚 */
+}
+
+/* ── 致命错误 ───────────────────────────────────────────── */
+
+.fatal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 28px;
+
+  background: var(--bg);
+  color: var(--ink);
+  text-align: center;
+}
+
+.fatal p {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+}
+
+.fatal pre {
+  max-width: 100%;
+  margin: 0;
+  overflow: auto;
+  color: var(--ink-dim);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fatal button {
+  appearance: none;
+  padding: 9px 22px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* ── 降低动态效果 ───────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .result,
+  .peek,
+  .ui,
+  .gate {
+    transition-duration: 1ms;
+  }
+}
+
+/* 横屏时上下空间被压扁，把字号收一档，别让结果卡顶到 chip 行 */
+@media (orientation: landscape) and (max-height: 480px) {
+  .result-value {
+    font-size: 44px;
+  }
+
+  .result-option {
+    font-size: 20px;
+  }
+}

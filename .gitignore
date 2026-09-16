@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.vite/
+*.local
+.DS_Store
+
+# 截图与诊断产物。tools/shot.mjs 每跑一次就写一堆 PNG，
+# 是二进制的测试残留，不该进版本库
+tools/out/
+
+# 本机权限设置，按 Claude Code 的惯例不入库
+.claude/settings.local.json
