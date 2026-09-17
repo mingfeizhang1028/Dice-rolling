@@ -56,19 +56,21 @@ export const MATERIALS = {
     pip: { style: 'inlay', color: 0x0d3b2e, radius: 0.078, raise: 0.006, depth: 0.014, roughness: 0.25 },
 
     sound: {
+      // 玉石 = 敲石头的"叮"：清脆、短、干净。
+      // ⚠️ 不能像金属那样高亮长余韵 —— 两种会听不出差别。压到 1750Hz、
+      //    缩短余韵、加点"喳"的撞击瞬态，才有石头的质感
       kind: 'modal',
-      baseHz: 2100,
-      hzJitter: 0.06,
-      // 非谐分音 = 玉的"脆"。等谐分音听起来像风铃，不像石头
-      partials: [1, 2.76, 5.40, 8.93],
-      partialGains: [1, 0.55, 0.28, 0.12],
-      partialDecay: [1, 0.78, 0.55, 0.35],   // 高次分音衰减更快
-      decayMs: 320,
-      decayJitter: 0.15,
-      noiseMix: 0.25,
-      noiseLpfHz: 6000,
-      noiseQ: 30,
-      gain: 0.50,
+      baseHz: 1750,
+      hzJitter: 0.05,
+      partials: [1, 2.4, 4.3, 6.9],
+      partialGains: [1, 0.5, 0.22, 0.09],
+      partialDecay: [1, 0.7, 0.5, 0.3],
+      decayMs: 260,
+      decayJitter: 0.12,
+      noiseMix: 0.35,
+      noiseLpfHz: 5200,
+      noiseQ: 24,
+      gain: 0.55,
     },
 
     haptic: { impactMs: 12, settle: [10, 30, 25], gain: 0.8 },
@@ -107,18 +109,20 @@ export const MATERIALS = {
     pip: { style: 'painted', color: 0x1a1a1e, radius: 0.076, raise: 0.0015, depth: 0.008, roughness: 0.35 },
 
     sound: {
+      // 塑料 = 干"啪"：几乎没余韵，主体是噪声瞬态。
+      // 略微加一点身体(110ms)、降一点频，避免像纯鼠标点击声
       kind: 'modal',
-      baseHz: 1500,
+      baseHz: 1350,
       hzJitter: 0.10,
       partials: [1, 2.1, 3.4, 5.1],
       partialGains: [1, 0.45, 0.20, 0.08],
       partialDecay: [1, 0.85, 0.7, 0.5],
-      decayMs: 80,            // "啪"，干
+      decayMs: 95,            // "啪"，干
       decayJitter: 0.20,
-      noiseMix: 0.65,         // 噪声占比最高
-      noiseLpfHz: 2000,
-      noiseQ: 12,
-      gain: 0.42,
+      noiseMix: 0.70,
+      noiseLpfHz: 1800,
+      noiseQ: 10,
+      gain: 0.45,
     },
 
     haptic: { impactMs: 8, settle: [8, 20, 16], gain: 0.6 },
@@ -161,18 +165,20 @@ export const MATERIALS = {
     pip: { style: 'engraved', color: 0x2e3138, radius: 0.080, raise: 0.002, depth: 0.010, roughness: 0.68 },
 
     sound: {
+      // 金属 = 敲金属块的"嗡——"：长、亮、近乎等音高。
+      // 保持长余韵是它的招牌，再拉长一点、加一点点撞击瞬态
       kind: 'modal',
-      baseHz: 3200,
+      baseHz: 3000,
       hzJitter: 0.04,
       partials: [1, 1.41, 2.13, 2.87, 3.92, 5.11],   // 分音最多
       partialGains: [1, 0.72, 0.50, 0.34, 0.22, 0.13],
       partialDecay: [1, 0.95, 0.9, 0.85, 0.8, 0.75],
-      decayMs: 900,           // 长余韵
-      decayJitter: 0.10,
-      noiseMix: 0.08,         // 噪声极少
-      noiseLpfHz: 9000,
-      noiseQ: 20,
-      gain: 0.38,
+      decayMs: 1150,          // 长余韵
+      decayJitter: 0.08,
+      noiseMix: 0.12,         // 噪声极少
+      noiseLpfHz: 8000,
+      noiseQ: 18,
+      gain: 0.42,
     },
 
     haptic: { impactMs: 14, settle: [8, 24, 20], gain: 0.9 },
@@ -211,18 +217,20 @@ export const MATERIALS = {
     pip: { style: 'burned', color: 0x2a1a0c, radius: 0.077, raise: 0.0015, depth: 0.008, roughness: 0.72 },
 
     sound: {
+      // 木头 = 闷钝的"咚"：主体是低通噪声，几乎没有余韵音调。
+      // 正弦分音只垫一层很低的身体，频率压到 620，噪声占大头
       kind: 'modal',
-      baseHz: 850,
+      baseHz: 620,
       hzJitter: 0.12,
       partials: [1, 1.72, 2.94, 4.35],
-      partialGains: [1, 0.6, 0.32, 0.14],
-      partialDecay: [1, 0.8, 0.6, 0.42],
-      decayMs: 140,
-      decayJitter: 0.18,
-      noiseMix: 0.55,
-      noiseLpfHz: 1000,       // 闷
-      noiseQ: 8,
-      gain: 0.46,
+      partialGains: [1, 0.5, 0.24, 0.10],
+      partialDecay: [1, 0.75, 0.55, 0.35],
+      decayMs: 160,
+      decayJitter: 0.16,
+      noiseMix: 0.72,          // 闷响为主
+      noiseLpfHz: 750,         // 闷
+      noiseQ: 6,
+      gain: 0.5,
     },
 
     haptic: { impactMs: 10, settle: [8, 22, 18], gain: 0.7 },

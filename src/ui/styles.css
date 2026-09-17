@@ -376,49 +376,61 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 虚按浮出的名字对照 ─────────────────────────────────── */
+/* ── 长按标注：侧边标签 + 曲线引线 ─────────────────────── */
 
 .peek {
   position: fixed;
-  left: 50%;
-  top: 50%;
+  inset: 0;
   z-index: 20;
-  transform: translate(-50%, -50%) scale(0.97);
 
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms var(--ease);
+}
+
+.peek.on {
+  opacity: 1;
+}
+
+.peek-svg {
+  position: absolute;
+  inset: 0;
+}
+
+.peek-curve {
+  fill: none;
+  stroke: var(--ink-faint);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+  opacity: 0.8;
+}
+
+.peek-anchor {
+  stroke: none;
+  opacity: 0.9;
+}
+
+.peek-label {
+  position: absolute;
   display: flex;
-  flex-direction: column;
-  gap: 9px;
+  align-items: center;
+  gap: 7px;
 
-  padding: 15px 19px;
+  max-width: 42vw;
+  height: 26px;
+  padding: 0 11px;
+
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 999px;
   background: var(--surface);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow: var(--shadow);
 
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 180ms var(--ease), transform 180ms var(--ease);
-}
-
-.peek.on {
-  opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
-}
-
-.peek-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 15px;
-  color: var(--ink);
-}
-
-/* 没起名的降一档，让起了名的更突出 */
-.peek-row.unnamed {
-  color: var(--ink-faint);
   font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .peek-dot {
@@ -430,8 +442,8 @@ body {
 }
 
 .peek-name {
-  max-width: 56vw;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── 角落设置按钮 ───────────────────────────────────────── */
