@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "test:flow": "node tools/test-flow.mjs",
+    "test:bake": "node tools/test-bake.mjs",
     "palette": "node tools/palette.mjs",
     "shot": "node tools/shot.mjs"
   },
