@@ -30,6 +30,23 @@ const t = computeResult([5,5,1], {options:['甲','乙','丙']}, dice(3));
 check('并列 winner 为 null', t.winner, null);
 check('并列 tied', t.tied, [0,1]);
 
+// ⚠️ 并列必须是"所有等于最大值的都收进来"，不是"找到两个就停"。
+//    3 颗骰子全相同的概率是 6/216，和两两并列 51/216 加起来约 26% ——
+//    不是罕见到可以不测的情况。三路并列若只列出前两个，
+//    用户会看到一张漏了一颗的结果卡，而且完全没有报错
+const t3 = computeResult([4,4,4], {options:['甲','乙','丙']}, dice(3));
+check('三路并列 winner 为 null', t3.winner, null);
+check('三路并列 tied 三个都列出', t3.tied, [0,1,2]);
+
+// 并列的两颗不相邻时，下标不能错位
+const t2 = computeResult([4,1,4], {options:['甲','乙','丙']}, dice(3));
+check('不相邻并列 tied', t2.tied, [0,2]);
+check('不相邻并列项文案', t2.tied.map(i=>t2.slots[i].option), ['甲','丙']);
+
+// 每颗的区分色必须按 slot 取，不能所有并列项都拿同一个色
+const cols = t3.tied.map(i=>t3.slots[i].color);
+check('三路并列三色各不相同', new Set(cols).size, 3);
+
 // 选项数对不上颗数 → 退回 multi
 check('选项数不匹配 → multi', computeResult([5,5], {options:['甲','乙','丙']}, dice(2)).kind, 'multi');
 
