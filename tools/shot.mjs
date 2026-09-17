@@ -11,12 +11,13 @@
  */
 
 import { spawn } from 'node:child_process';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
-const PORT = 9333;
-const BASE = 'http://localhost:5173/';
+// 默认打本地 dev server。用 BASE_URL 指向线上产物可以验证构建后的包 ——
+// 压缩、去掉了 import.meta.env.DEV 分支，跟 dev 是两条不同的代码路径
+const BASE = process.env.BASE_URL || 'http://localhost:5173/';
 
 const query = process.argv[2] ?? '';
 const waitMs = Number(process.argv[3] || 3000);
@@ -35,7 +36,21 @@ if (seedRaw) {
   }
 }
 
-const profile = `${process.env.TEMP || '/tmp'}/dice-cdp-profile`;
+/**
+ * ⚠️ 每次跑都必须用**全新的 profile 目录和端口**。
+ *
+ * Edge 在 Windows 上有个交接行为：新进程发现 `--user-data-dir` 已经被
+ * 另一个实例占用时，会把请求转交给那个实例然后**自己立刻退出**。
+ * 于是 --remote-debugging-port 根本没在新进程上生效，CDP 连上的是
+ * 上一次残留的浏览器 —— 它那个标签页还开着旧的 dev 页面。
+ * 表现极具迷惑性：明明 BASE_URL 指向线上，抓到的却是本地页面的内容。
+ *
+ * 修法是让每次运行互不相干：独立目录 + 独立端口。退出时整棵进程树一起杀
+ * （Edge 是主进程带一堆子进程，只杀父进程会留下占用下一个 profile 的孤儿）。
+ */
+const RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
+const profile = `${process.env.TEMP || '/tmp'}/dice-cdp-${RUN_ID}`;
+const PORT = Number(process.env.CDP_PORT) || 9333 + (process.pid % 500);
 
 const child = spawn(EDGE, [
   '--headless=new',
@@ -107,8 +122,19 @@ try {
   // 预置设置。选项和骰子名字的 UI 在 P3 才有，在那之前只能这样测到
   // 那些分支 —— 否则"有选项"和"并列"这两条路在浏览器里根本走不到
   if (seed) {
+    // ⚠️ 包 try/catch 并把结果留痕。不包的话 localStorage 抛异常
+    //    （比如在还没有源的文件上访问）会静默失败，而表现是
+    //    "设置没生效"，看起来像应用读设置的 bug，其实是注入没跑成
     await send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `localStorage.setItem('dice-rolling', ${JSON.stringify(JSON.stringify(seed))})`,
+      source: `
+        window.__seed = 'not-run';
+        try {
+          localStorage.setItem('dice-rolling', ${JSON.stringify(JSON.stringify(seed))});
+          window.__seed = 'ok';
+        } catch (e) {
+          window.__seed = 'throw: ' + e.name + ': ' + e.message;
+        }
+      `,
     });
   }
 
@@ -124,16 +150,41 @@ try {
   //     触摸事件，手势链路就变了。这里只要 maxTouchPoints 对就行）
   await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 
-  await send('Page.navigate', { url: BASE + query });
+  // ⚠️ Page.navigate 失败是**静默**的：它返回一个 errorText 但不会抛，
+  //    而连错 target 时文档会停在 about:blank。那时的表现极具误导性 ——
+  //    body.innerText 是空、localStorage 报 "Access is denied for this
+  //    document"（不透明源），看着像应用崩了，其实是根本没导航过去。
+  //    所以这里必须自己确认落点，并重试一次
+  const dest = BASE + query;
+  let landed = false;
+
+  for (let attempt = 1; attempt <= 3 && !landed; attempt++) {
+    const nav = await send('Page.navigate', { url: dest });
+    if (nav?.errorText) console.log(`✗ 第 ${attempt} 次导航失败：${nav.errorText}`);
+
+    const t0 = Date.now();
+    while (Date.now() - t0 < 8000) {
+      const r = await send('Runtime.evaluate', {
+        expression: `location.href`,
+        returnByValue: true,
+      });
+      if ((r?.result?.value || '').startsWith(BASE)) { landed = true; break; }
+      await sleep(300);
+    }
+    if (!landed) console.log(`⚠️ 第 ${attempt} 次没落到目标页，重来`);
+  }
+
+  if (!landed) {
+    console.log('✗ 三次都没导航成功，后面的结果都不可信');
+    // 把 target 列表打出来，好判断是不是连错了目标
+    const list = await fetch(`http://127.0.0.1:${PORT}/json/list`).then((r) => r.json()).catch(() => []);
+    for (const t of list) console.log(`   target: ${t.type} ${t.url}`);
+  }
+
   await sleep(waitMs);
 
   // 首页要点一下"开始"。自测页没有 gate，点不到就算了
-  if (!query) {
-    await send('Runtime.evaluate', {
-      expression: `document.getElementById('start')?.click()`,
-    });
-    await sleep(2600);
-  }
+  if (!query) await startApp(send);
 
   if (diceCount) {
     // 第 6 个参数是"调到几颗"，不是点几下。从标签读当前值再算差值，
@@ -185,6 +236,43 @@ try {
   console.log('\n── 页面文字 ──');
   console.log(text?.result?.value || '(空)');
 
+  // 预置的设置到底有没有落到 localStorage、应用又读成了什么。
+  // 走 seed 的那些分支（选项、命名）全靠它，不对的话结果会静默地走错分支
+  const store = await send('Runtime.evaluate', {
+    expression: `(() => {
+      try {
+        const raw = localStorage.getItem('dice-rolling');
+        if (!raw) return '(localStorage 里没有 dice-rolling)';
+        const o = JSON.parse(raw);
+        return 'options=' + JSON.stringify(o.options) +
+               ' names=' + JSON.stringify(o.names) +
+               ' count=' + o.diceCount + ' v=' + o.v;
+      } catch (e) { return '读不出来: ' + e.message; }
+    })()`,
+    returnByValue: true,
+  });
+  console.log('\n── 预置设置 ──');
+  console.log(store?.result?.value || '(空)');
+  if (seed) {
+    const probe = await send('Runtime.evaluate', {
+      expression: `window.__seed || '(脚本没执行)'`,
+      returnByValue: true,
+    });
+    console.log('注入脚本：' + (probe?.result?.value ?? '(未知)'));
+  }
+
+  // 任意求值出口。有些东西肉眼看图判不出来（比如色点到底是哪个绿），
+  // 量一下比盯着截图猜可靠得多
+  if (process.env.EVAL) {
+    const r = await send('Runtime.evaluate', {
+      expression: process.env.EVAL,
+      returnByValue: true,
+      awaitPromise: true,
+    });
+    console.log('\n── EVAL ──');
+    console.log(JSON.stringify(r?.result?.value ?? r, null, 1));
+  }
+
   if (logs.length) {
     console.log('\n── console ──');
     for (const l of logs.slice(-25)) console.log(l);
@@ -199,7 +287,19 @@ try {
   }
 } finally {
   ws?.close();
-  child.kill();
+  // 杀整棵进程树。/T 是必须的：Edge 主进程下面挂着一堆子进程，
+  // 只杀父进程会留下孤儿继续占着 profile 和端口
+  try {
+    spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+  } catch {
+    child.kill();
+  }
+  await sleep(600);   // 等文件句柄松开再删，否则 rm 会 EBUSY
+  try {
+    rmSync(profile, { recursive: true, force: true });
+  } catch {
+    /* 删不掉就算了，下次用的是新目录 */
+  }
 }
 
 /**
@@ -228,13 +328,37 @@ async function doGesture(send, kind) {
     await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y: 560, button: 'left', clickCount: 1, buttons: 1 });
     await sleep(60);
     await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y: 560, button: 'left', clickCount: 1, buttons: 0 });
-    await sleep(5000);
+    await waitResult(send);
     return;
   }
 
   await swipe(send);
 
-  await sleep(Number(process.env.SETTLE_WAIT || 6000));   // 投掷 + 落定 + 停顿
+  await waitResult(send);
+}
+
+/**
+ * 等到结果卡真的出东西，而不是睡一个固定时长。
+ *
+ * ⚠️ 无头环境走 SwiftShader 软渲染，帧率很低，而 world.step 是按真实时间
+ *    推进的 —— 所以落定耗时比真机长得多，而且不稳定。固定睡 15 秒偶尔
+ *    还是抓空，表现是"结果卡空白"，看着像投掷坏了。
+ *    SETTLE_WAIT 现在只是**下限**，超过它才开始轮询。
+ */
+async function waitResult(send, timeoutMs = 45000) {
+  await sleep(Number(process.env.SETTLE_WAIT || 6000));
+
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    const r = await send('Runtime.evaluate', {
+      expression: `(document.querySelector('.result')?.innerText || '').length > 0`,
+      returnByValue: true,
+    });
+    if (r?.result?.value === true) return true;
+    await sleep(400);
+  }
+  console.log(`⚠️ 又等了 ${timeoutMs}ms 结果卡还是空的 —— 骰子可能真的没落定`);
+  return false;
 }
 
 /**
@@ -371,6 +495,49 @@ async function swipe(send) {
     });
   }
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y: 400, button: 'left', clickCount: 1, buttons: 0 });
+}
+
+/**
+ * 等到应用真的装好，而不是等一个固定时长。
+ *
+ * ⚠️ 为什么不能只 sleep 一个固定值：线上要过代理下载 176KB，
+ *    启动耗时随网络波动很大。睡 2600ms 在本地够，在线上可能手势
+ *    已经发出去了而 initInput 还没跑 —— 表现是"骰子一动不动、结果卡空白"，
+ *    看起来像投掷坏了，其实是工具太急。这个坑我踩过一次。
+ *
+ * 就绪判据用 chips 渲染完成：它是 buildShell 之后才有的，
+ * 而 buildShell 排在 createView / createWorld / 骰子 / 预编译之后。
+ */
+async function startApp(send, timeoutMs = 40000) {
+  const t0 = Date.now();
+  let clicks = 0;
+
+  while (Date.now() - t0 < timeoutMs) {
+    const r = await send('Runtime.evaluate', {
+      expression: `(() => {
+        if (document.querySelector('.chip')) return 'ready';
+        // ⚠️ 必须反复点。只在固定时刻点一次的话，若那一刻 176KB 的包
+        //    还没下完（线上过代理时很常见），点击就落在监听器挂载之前，
+        //    然后永远丢失 —— 表现是页面停在"开始"，看着像白屏故障。
+        //    handler 是 {once:true}，重复点无副作用
+        if (document.getElementById('start')?.click()) return 'clicked';
+        return 'waiting';
+      })()`,
+      returnByValue: true,
+    });
+
+    const v = r?.result?.value;
+    if (v === 'ready') {
+      if (clicks > 1) console.log(`（点了 ${clicks} 次"开始"才进去 —— 包加载偏慢）`);
+      return true;
+    }
+    if (v === 'clicked') clicks++;
+
+    await sleep(300);
+  }
+
+  console.log(`⚠️ 等了 ${timeoutMs}ms 应用还没就绪，继续（手势可能落空）`);
+  return false;
 }
 
 async function findTarget() {

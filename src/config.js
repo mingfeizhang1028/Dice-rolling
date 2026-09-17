@@ -57,7 +57,7 @@ export const PHYSICS = {
   //
   // ⚠️ 但**最高的一颗必须低于挡墙**。约束是：
   //      spawnHeight + (MAX_DICE-1) * slotLift  <  wallHeight
-  //    1.5 + 3*0.12 = 1.86 < 2.0 ✓
+  //    1.5 + 3*0.12 = 1.86 < 3.0 ✓（wallHeight 见下方 SCENE）
   //    早先写成 spawnHeight 1.9 + slot*0.35 时，第 3 颗出生在 y=2.6，
   //    直接从墙顶飞出去，越界救援每局都在捞它。
   spawnHeight: 1.5,

@@ -1,0 +1,14 @@
+# Windows 上 git 默认会把 LF 换成 CRLF，于是每次 clone 或 checkout
+# 都报一长串 "LF will be replaced by CRLF"，而且真换过之后
+# 整个文件在 diff 里都成了改动行。统一成 LF 就没这些噪音。
+#
+# 二进制文件必须显式标出来，否则 git 可能"帮"你转换行尾，
+# 那会把图片改坏
+* text=auto eol=lf
+
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.woff2 binary
+*.ico  binary
