@@ -153,6 +153,19 @@ function buildTray(w) {
     b.position.set(def.pos[0], def.pos[1], def.pos[2]);
     w.addBody(b);
   }
+
+  // 顶盖（看不见的物理板）：把托盘封成"罐子"。骰子撞到顶就弹回场内，
+  // 不会真的飞出去 —— 之前只能靠越界瞬移捞回，大力猛掷时会"啪"地瞬移，观感很差。
+  // 底沿与墙顶(y=wallH)齐平、盖满整个截面，不留能漏骰子的缝；
+  // 底沿 y=3.0 高于最大出生高度(2.82)，顶面朝上是闭合的，骰子永远出不去。
+  // 用 WALL_MATERIAL（打滑+回弹），骰子撞顶不会贴在上面。
+  const lid = new CANNON.Body({
+    mass: 0,
+    shape: new CANNON.Box(new CANNON.Vec3(half + t, t / 2, half + t)),
+    material: WALL_MATERIAL,
+  });
+  lid.position.set(0, wallH + t / 2, 0);
+  w.addBody(lid);
 }
 
 /**
@@ -162,10 +175,12 @@ function buildTray(w) {
  *    金属密度是木头的 13 倍，照实做的话金属骰子根本甩不动 ——
  *    用户只会觉得"卡"，不会觉得"金属真沉"。
  *    重量感应该靠角阻尼和声音表达，不靠质量。
+ *
+ * @param {number} [size] 尺寸缩放系数（骰子多了时缩小的量，默认 1）
  */
-export function createDieBody(materialId, slot = 0) {
+export function createDieBody(materialId, slot = 0, size = 1) {
   const p = getMaterial(materialId).physics;
-  const h = PHYSICS.dieHalf;
+  const h = PHYSICS.dieHalf * size;
 
   const body = new CANNON.Body({
     mass: PHYSICS.dieMass,

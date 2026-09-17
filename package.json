@@ -12,7 +12,8 @@
     "test:ambience": "node tools/test-ambience.mjs",
     "test:haptics": "node tools/test-haptics.mjs",
     "test:shake": "node tools/test-shake.mjs",
-    "test": "npm run test:flow && npm run test:bake && npm run test:ambience && npm run test:haptics && npm run test:shake",
+    "test:containment": "node tools/test-containment.mjs",
+    "test": "npm run test:flow && npm run test:bake && npm run test:ambience && npm run test:haptics && npm run test:shake && npm run test:containment",
     "palette": "node tools/palette.mjs",
     "shot": "node tools/shot.mjs"
   },

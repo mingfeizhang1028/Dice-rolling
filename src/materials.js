@@ -17,7 +17,7 @@ export const MATERIALS = {
   jade: {
     id: 'jade',
     label: '玉石',
-    swatch: '#7fd6b5',
+    swatch: '#4f9e7d',
 
     physics: {
       restitution: 0.40,
@@ -28,21 +28,28 @@ export const MATERIALS = {
     },
 
     visual: {
-      color: 0x7fd6b5,
+      // 翡翠绿。用户反馈"太轻"—— 薄荷绿(0x7fd6b5)和中绿(0x69bd95)都偏浅，
+      // 压到深一点的青绿，配合透射衰减才是"玉"
+      color: 0x4f9e7d,
       // 白玉 / 碧玉 / 黄玉。早先三个都是薄荷绿，在 11px 的色点上
       // 最小色差只有 40，等于没区分 —— 详见 tools/palette.mjs
       colorAlt: [0xe8f2ec, 0x2f7a58, 0xd8c98a],
       metalness: 0.0,
-      roughness: 0.15,
-      // transmission 双倍渲染量，view.js 只在 tier==='high' 才保留
-      transmission: 0.30,
-      thickness: 1.2,
+      // 微涩 → 蜡质光泽。0.15 太滑，会往玻璃/塑料那边走
+      roughness: 0.18,
+      // transmission 双倍渲染量，view.js 里按档位调分辨率
+      // ⚠️ 半透明是玉的核心：0.30 太"实"，像上了漆的木头
+      transmission: 0.55,
+      // 光在体内的穿透距离更长 → "透光而不透明"的深度感
+      thickness: 1.8,
       ior: 1.60,
       clearcoat: 1.0,
-      clearcoatRoughness: 0.08,
+      // 蜡感的光泽：不锐利，是柔润的漫反射高光
+      clearcoatRoughness: 0.16,
       attenuationColor: 0x2f7d66,
-      attenuationDistance: 0.9,
-      envMapIntensity: 1.2,
+      // 衰减慢一点，让深处的绿透出来，而不是一下就变灰
+      attenuationDistance: 1.6,
+      envMapIntensity: 1.3,
     },
 
     // 玉的点数是镶嵌进去的深绿小圆珠，明显凸出、有光泽
@@ -135,15 +142,18 @@ export const MATERIALS = {
       // 金 / 古铜 / 黑钛
       colorAlt: [0xd8b46a, 0x9a6b4a, 0x5a5e66],
       metalness: 1.0,
-      roughness: 0.22,
+      // 抛光面。0.22 是拉丝/哑光钢，读起来不"金属"
+      roughness: 0.08,
       transmission: 0.0,
       thickness: 0,
       ior: 2.5,
-      clearcoat: 0.4,
-      clearcoatRoughness: 0.12,
+      // 清漆高光，让高光点更锐
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.06,
       attenuationColor: 0xffffff,
       attenuationDistance: 1,
-      envMapIntensity: 1.3,   // 金属全靠环境贴图，这个值低了会像发黑的铁
+      // 金属全靠环境贴图撑，1.3 偏暗，提到 1.7 才有"亮的金属"而不是"发黑的铁"
+      envMapIntensity: 1.7,
     },
 
     // 金属点数是刻进去的凹坑。凹坑是"不反光的洞"，所以用哑光深色冒充，
@@ -245,10 +255,18 @@ export function blendContact(a, b) {
   };
 }
 
-/** 第 slot 颗骰子的区分色。slot 0 用主色，1..3 用 colorAlt */
+/**
+ * 第 slot 颗骰子的区分色。
+ *
+ * 色盘 = 主色 + 3 个 colorAlt，共 4 色，按 slot 循环取用。
+ * ⚠️ 之前写成「slot 0 固定主色、其余只在 3 个 colorAlt 里轮转」，骰子多了之后
+ *    主色永远只落在第 1 颗上 —— 总有一个颜色只有一颗骰子。4 色一起循环，
+ *    任何颗数下各色都尽量均匀。
+ */
 export function dieColor(materialId, slot) {
   const m = getMaterial(materialId);
-  return slot === 0 ? m.visual.color : m.visual.colorAlt[slot - 1];
+  const palette = [m.visual.color, ...m.visual.colorAlt];
+  return palette[slot % palette.length];
 }
 
 /** 十六进制色 → CSS 字符串，虚按对照表要用 */

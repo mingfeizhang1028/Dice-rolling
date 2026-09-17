@@ -72,13 +72,27 @@ function migrate(data) {
   }
 
   // 数组字段要单独校验长度，否则改版后可能拿到越界的旧值
-  if (!Array.isArray(out.names) || out.names.length < 4) {
+  const NAMES = 12; // 骰子上限
+  if (!Array.isArray(out.names) || out.names.length < NAMES) {
     out.names = [...DEFAULTS.names];
     if (Array.isArray(working.names)) {
-      for (let i = 0; i < 4; i++) out.names[i] = working.names[i] ?? '';
+      for (let i = 0; i < NAMES; i++) out.names[i] = working.names[i] ?? '';
     }
   }
   if (!Array.isArray(out.options)) out.options = [];
+
+  // 自定义颜色：只收合法 hex 字符串，缺的补空（空 = 用材质默认）
+  if (!Array.isArray(out.colors)) out.colors = [];
+  out.colors = out.colors.map((c) => (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : ''));
+
+  // 多数决归属：只收 0..选项数-1 的整数，越界钳制；缺的补 -1（-1 = 自动）
+  if (!Array.isArray(out.assignment)) out.assignment = [];
+  const optN = out.options.filter((s) => (s || '').trim()).length;
+  out.assignment = out.assignment.map((a) => {
+    const n = Number(a);
+    if (!Number.isInteger(n)) return -1;
+    return optN > 0 ? Math.max(0, Math.min(optN - 1, n)) : -1;
+  });
 
   return out;
 }

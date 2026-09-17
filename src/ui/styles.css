@@ -634,11 +634,116 @@ body {
   color: var(--ink);
 }
 
+/* 选项与命名区的收起按钮。默认收起，避免一打开就是满屏输入框 */
+.editor-collapse {
+  align-self: flex-start;
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  padding: 9px 15px;
+  cursor: pointer;
+  transition: color 250ms var(--ease), border-color 250ms var(--ease);
+}
+
+.editor-collapse:active {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.editor-collapse[aria-expanded='true'] {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
 .editor-note {
   margin: 0;
   font-size: 12px;
   letter-spacing: 0.04em;
   color: var(--ink-faint);
+}
+
+/* ── 骰子行的颜色自选 ── */
+
+.editor-color-swatch {
+  appearance: none;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.editor-color-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-solid);
+}
+
+.editor-color-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.editor-color-dot {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.editor-color-native {
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.editor-color-reset {
+  align-self: flex-start;
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+/* 多数决里"代表：X"的切换按钮 */
+.editor-assign {
+  appearance: none;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 11px;
+  cursor: pointer;
+}
+
+.editor-assign:active {
+  border-color: var(--accent);
+  color: var(--ink);
 }
 
 /* ── 通用控件 ── */

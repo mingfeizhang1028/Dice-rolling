@@ -31,10 +31,18 @@ const AMB_KINDS = [
 const MAX_OPTIONS = 20;
 const DUEL_PARTICIPANTS = 4;
 
+/** 骰子自定义色的预设色带。给"想要什么色就什么色"的第一步选择 */
+const COLOR_PRESETS = [
+  '#e8e8ea', '#d94a3d', '#e8c33f', '#7fd6b5', '#3f7fd8', '#b98a54',
+  '#c8cbd2', '#d8b46a', '#9a6b4a', '#5a5e66', '#2f7a58', '#d8c98a',
+  '#e8f2ec', '#f2a2c8',
+];
+
 /** 判定规则 label，编辑页对应用户语言 */
 const MODES = [
   { id: 'duel', label: '对决', blurb: '一骰一选项，点数高者胜' },
   { id: 'pick', label: '选号', blurb: '点数和数到第几个选谁' },
+  { id: 'vote', label: '多数决', blurb: '骰子手动归属选项，比总和' },
 ];
 
 export function initEditor(root, opts) {
@@ -43,7 +51,7 @@ export function initEditor(root, opts) {
   let outer = null;
   let bodyEl = null;
   let optionWrap = null;
-  let nameWrap = null;
+  let dieWrap = null;
   let themeWrap = null;
   let soundRow = null;
   let hapticRow = null;
@@ -104,14 +112,21 @@ export function initEditor(root, opts) {
     return head;
   }
 
-  // ── 决策：判定规则 + 选项 + 命名 ───────────────────────
+  // ── 决策：判定规则 + 选项 + 骰子 ───────────────────────
 
   let modeHint = null;
+  let optBtn = null;
+  let optBody = null;
+  let dieBtn = null;
+  let dieBody = null;
+  /** 选项 / 骰子两个折叠块各自是否展开。默认都收起，避免一打开就是满屏输入框 */
+  let optionsOpen = false;
+  let diceOpen = false;
 
   function buildDecision() {
     const sec = section('决策');
 
-    // 判定规则：对决 / 选号
+    // 判定规则：对决 / 选号 / 多数决
     const modeRow = document.createElement('div');
     modeRow.className = 'editor-field';
 
@@ -133,7 +148,7 @@ export function initEditor(root, opts) {
         renderModeHint();
         syncDiceCount();
         renderOptions();
-        renderNames();
+        renderDice();
         opts.onReline();
       });
       modeSeg.appendChild(b);
@@ -142,6 +157,21 @@ export function initEditor(root, opts) {
 
     modeHint = document.createElement('p');
     modeHint.className = 'editor-note';
+
+    // ── 「选项」折叠块 ──
+    optBtn = document.createElement('button');
+    optBtn.type = 'button';
+    optBtn.className = 'editor-collapse';
+    optBtn.setAttribute('aria-expanded', 'false');
+    optBtn.addEventListener('click', () => {
+      optionsOpen = !optionsOpen;
+      optBody.hidden = !optionsOpen;
+      renderCollapse();
+    });
+
+    optBody = document.createElement('div');
+    optBody.className = 'editor-collapse-body';
+    optBody.hidden = true;
 
     optionWrap = document.createElement('div');
     optionWrap.className = 'editor-options';
@@ -154,18 +184,46 @@ export function initEditor(root, opts) {
       visibleOptions++;
       renderOptions();
     });
+    optBody.append(optionWrap, addBtn);
 
-    sec.append(modeRow, modeHint, optionWrap, addBtn);
+    // ── 「骰子」折叠块：名字 + 颜色 + （多数决）归属 ──
+    dieBtn = document.createElement('button');
+    dieBtn.type = 'button';
+    dieBtn.className = 'editor-collapse';
+    dieBtn.setAttribute('aria-expanded', 'false');
+    dieBtn.addEventListener('click', () => {
+      diceOpen = !diceOpen;
+      dieBody.hidden = !diceOpen;
+      renderCollapse();
+    });
 
-    nameWrap = document.createElement('div');
-    nameWrap.className = 'editor-names';
-    nameWrap.hidden = true;
-    sec.appendChild(nameWrap);
+    dieBody = document.createElement('div');
+    dieBody.className = 'editor-collapse-body';
+    dieBody.hidden = true;
+
+    dieWrap = document.createElement('div');
+    dieWrap.className = 'editor-names';
+    dieBody.appendChild(dieWrap);
+
+    sec.append(modeRow, modeHint, optBtn, optBody, dieBtn, dieBody);
 
     renderModeHint();
     renderOptions();
-    renderNames();
+    renderDice();
     return sec;
+  }
+
+  /** 两个折叠按钮的文案：带计数，收起时也能一眼知道里面有货 */
+  function renderCollapse() {
+    if (optBtn) {
+      const f = filledCount();
+      optBtn.textContent = `选项${f ? `（${f}）` : ''} ${optionsOpen ? '▾' : '▸'}`;
+      optBtn.setAttribute('aria-expanded', String(optionsOpen));
+    }
+    if (dieBtn) {
+      dieBtn.textContent = `骰子（名字·颜色${settings.decisionMode === 'vote' && filledCount() > 0 ? '·分配' : ''}）${diceOpen ? '▾' : '▸'}`;
+      dieBtn.setAttribute('aria-expanded', String(diceOpen));
+    }
   }
 
   function filledCount() {
@@ -174,16 +232,29 @@ export function initEditor(root, opts) {
 
   /** 当前是否处于"对决 + 填了选项"——此时骰子数锁为参与选项数，名字被选项代管 */
   function isDuelOverriding() {
-    return settings.decisionMode !== 'pick' && filledCount() > 0;
+    return settings.decisionMode === 'duel' && filledCount() > 0;
   }
 
   function renderModeHint() {
     if (!modeHint) return;
-    const mode = settings.decisionMode === 'pick' ? 'pick' : 'duel';
+    const mode = ['pick', 'vote', 'duel'].includes(settings.decisionMode)
+      ? settings.decisionMode
+      : 'duel';
     const f = filledCount();
 
     if (mode === 'pick') {
       modeHint.textContent = '选号玩法：把所有骰子点数加起来，从头循环数到第几个就选第几个';
+    } else if (mode === 'vote') {
+      if (f === 0) {
+        modeHint.textContent = '多数决：每颗骰子归属一个选项，掷出后比各选项的点数总和，高者胜';
+      } else {
+        // 按当前分配统计各选项骰子数，不匀时提醒 —— 总和玩法下骰子多的选项天然占优
+        const counts = new Array(f).fill(0);
+        for (let i = 0; i < settings.diceCount; i++) counts[assignedOf(i, f)]++;
+        const bal = counts.every((c) => c === counts[0]);
+        const warn = bal ? '' : ` 当前 ${counts.map((c, k) => `${filledText(k)}×${c}`).join('、')}，骰子数不等会偏向骰子多的一方。`;
+        modeHint.textContent = `多数决：骰子手动归属选项，掷出后比总和，高者胜。${warn}`;
+      }
     } else if (f > DUEL_PARTICIPANTS) {
       modeHint.textContent = `对决只让前 ${DUEL_PARTICIPANTS} 个选项参加，其余会被忽略；更多选项请用选号`;
     } else {
@@ -191,9 +262,9 @@ export function initEditor(root, opts) {
     }
   }
 
-  /** 同步骰子颗数。对决：颗数锁为参与选项数；选号/无选项：不动，交给 chip 控制 */
+  /** 同步骰子颗数。对决：颗数锁为参与选项数；选号/多数决：不动，交给 chip 控制 */
   function syncDiceCount() {
-    if (settings.decisionMode === 'pick') return;
+    if (settings.decisionMode !== 'duel') return;
     const f = filledCount();
     if (f > 0) settings.diceCount = Math.max(1, Math.min(DUEL_PARTICIPANTS, f));
   }
@@ -203,6 +274,21 @@ export function initEditor(root, opts) {
     if (!isDuelOverriding()) return;
     const f = Math.min(filledCount(), settings.options.length);
     for (let i = 0; i < f; i++) settings.names[i] = (settings.options[i] || '').trim();
+  }
+
+  function filledText(k) {
+    const f = settings.options.map((s) => (s || '').trim()).filter(Boolean);
+    return f[k] || `第 ${k + 1} 项`;
+  }
+
+  /** 第 i 颗骰子归属的选项索引。多数决读 assignment；缺省自动 i % N；对决固定 1:1 */
+  function assignedOf(i, F) {
+    if (settings.decisionMode === 'vote') {
+      const a = Number(settings.assignment?.[i]);
+      const idx = Number.isInteger(a) && a >= 0 ? a : i % F;
+      return Math.max(0, Math.min(F - 1, idx));
+    }
+    return Math.min(F - 1, i);
   }
 
   function renderOptions() {
@@ -228,8 +314,7 @@ export function initEditor(root, opts) {
         syncDiceCount();
         syncDuelNames();
         opts.save();
-        // 值一变，命名区（决战代管时）的可见性可能变
-        renderNames();
+        renderDice();
         renderModeHint();
       });
       input.addEventListener('change', () => {
@@ -254,7 +339,7 @@ export function initEditor(root, opts) {
         syncDuelNames();
         opts.save();
         renderOptions();
-        renderNames();
+        renderDice();
         renderModeHint();
         opts.onReline();
       });
@@ -263,35 +348,82 @@ export function initEditor(root, opts) {
       optionWrap.appendChild(row);
     }
 
-    renderNames();
+    renderCollapse();
   }
 
-  function renderNames() {
-    if (!nameWrap || !optionWrap) return;
-
-    // 只有"对决 + 填了选项"时名字被选项代管、不让单独填。
-    // 选号时选项和骰子不是一一对应，颗名有自己的意义，仍让填。
-    if (isDuelOverriding()) {
-      nameWrap.hidden = true;
-      nameWrap.replaceChildren();
-      return;
-    }
-    nameWrap.hidden = false;
-    nameWrap.replaceChildren();
+  /** 骰子折叠块：每颗 = 颜色(可自选) + 名字 + （多数决）归属选项 */
+  function renderDice() {
+    if (!dieWrap) return;
+    dieWrap.replaceChildren();
 
     const note = document.createElement('p');
     note.className = 'editor-note';
-    note.textContent = '给每颗骰子起个名字，长按屏幕就能对照着看';
-    nameWrap.appendChild(note);
+    note.textContent = '给骰子起名字、选颜色；多数决里还能点「代表」换它所属的选项';
+    dieWrap.appendChild(note);
+
+    const F = filledCount();
+    const vote = settings.decisionMode === 'vote' && F > 0;
 
     for (let i = 0; i < settings.diceCount; i++) {
       const row = document.createElement('div');
       row.className = 'editor-name-row';
 
-      const dot = document.createElement('span');
-      dot.className = 'editor-dot';
-      dot.style.background = hexToCss(dieColor(settings.material, i));
+      // ── 颜色：色点按钮 → 内联色板（预设 + 原生取色器 + 默认） ──
+      const swatch = document.createElement('button');
+      swatch.type = 'button';
+      swatch.className = 'editor-color-swatch';
+      swatch.style.background = settings.colors[i] || hexToCss(dieColor(settings.material, i));
+      swatch.setAttribute('aria-label', `第 ${i + 1} 颗颜色`);
+      swatch.textContent = '';
 
+      const picker = document.createElement('div');
+      picker.className = 'editor-color-pop';
+      picker.hidden = true;
+
+      const strip = document.createElement('div');
+      strip.className = 'editor-color-strip';
+      for (const c of COLOR_PRESETS) {
+        const p = document.createElement('button');
+        p.type = 'button';
+        p.className = 'editor-color-dot';
+        p.style.background = c;
+        p.addEventListener('click', () => {
+          settings.colors[i] = c;
+          opts.save();
+          opts.onReline();
+          renderDice();
+        });
+        strip.appendChild(p);
+      }
+
+      const native = document.createElement('input');
+      native.type = 'color';
+      native.className = 'editor-color-native';
+      native.setAttribute('aria-label', '自定义颜色');
+      native.value = settings.colors[i] || '#7fd6b5';
+      native.addEventListener('input', () => {
+        settings.colors[i] = native.value;
+        opts.save();
+        opts.onReline();
+      });
+
+      const reset = document.createElement('button');
+      reset.type = 'button';
+      reset.className = 'editor-color-reset';
+      reset.textContent = '默认';
+      reset.addEventListener('click', () => {
+        settings.colors[i] = '';
+        opts.save();
+        opts.onReline();
+        renderDice();
+      });
+
+      picker.append(strip, native, reset);
+      swatch.addEventListener('click', () => {
+        picker.hidden = !picker.hidden;
+      });
+
+      // ── 名字 ──
       const input = document.createElement('input');
       input.type = 'text';
       input.maxLength = 24;
@@ -306,9 +438,32 @@ export function initEditor(root, opts) {
         opts.onReline();
       });
 
-      row.append(dot, input);
-      nameWrap.appendChild(row);
+      row.append(swatch, input);
+
+      // ── 多数决：归属选项，点一下切到下一项 ──
+      if (vote) {
+        const a = assignedOf(i, F);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'editor-assign';
+        btn.textContent = `代表：${filledText(a)}`;
+        btn.setAttribute('aria-label', `第 ${i + 1} 颗代表的选项，点击切换`);
+        btn.addEventListener('click', () => {
+          const next = (a + 1) % F;
+          settings.assignment[i] = next;
+          opts.save();
+          opts.onReline();
+          renderDice();
+          renderModeHint();
+        });
+        row.append(btn);
+      }
+
+      dieWrap.appendChild(row);
+      dieWrap.appendChild(picker);
     }
+
+    renderCollapse();
   }
 
   // ── 设置：是与否 / 主题 / 声音 / 触觉 ─────────────────
@@ -327,6 +482,25 @@ export function initEditor(root, opts) {
     soundRow.className = 'editor-sound';
     sec.appendChild(soundRow);
     renderSound();
+
+    // ── 输入方式：滑动 / 摇晃 可各自关掉 ──
+    const inputRow = document.createElement('div');
+    inputRow.className = 'editor-sound';
+
+    const swipe = toggle('滑动投掷', settings.swipeOn, (on) => {
+      settings.swipeOn = on;
+      opts.save();
+    });
+    inputRow.appendChild(swipe);
+
+    const shake = toggle('摇晃投掷', settings.shakeOn, (on) => {
+      settings.shakeOn = on;
+      opts.save();
+      opts.onShakeToggle?.(on);
+    });
+    inputRow.appendChild(shake);
+
+    sec.appendChild(inputRow);
 
     return sec;
   }

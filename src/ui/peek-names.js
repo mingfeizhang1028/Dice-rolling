@@ -5,12 +5,11 @@
  * 抢走，骰子本身反而变成了背景。让骰子只有颜色 —— 颜色是直觉的，
  * 名字是概念的 —— 需要概念的时候按住看一眼，这就够了。
  *
- * 只在真的有名字时才浮出。没起名的时候按住什么都不发生，
+ * 只在真的有名字或"代表某选项"时才浮出。两者皆无的时候按住什么都不发生，
  * 而不是弹一个空面板，那会让人觉得"按坏了"。
  */
 
 import { on } from '../core/bus.js';
-import { dieColor, hexToCss } from '../materials.js';
 
 export function initPeekNames(el, { getDice }) {
   on('peek:start', show);
@@ -30,10 +29,9 @@ export function initPeekNames(el, { getDice }) {
 
   function show() {
     const dice = getDice();
-    const named = dice.filter((d) => d.name);
-
-    // 都没起名就什么都不做
-    if (!named.length) return;
+    // 有名字或"代表某选项"的骰子都值得浮出来看；两者皆无才忽略
+    const meaningful = dice.filter((d) => d.name || d.option);
+    if (!meaningful.length) return;
 
     el.replaceChildren();
     for (const d of dice) {
@@ -42,14 +40,18 @@ export function initPeekNames(el, { getDice }) {
 
       const dot = document.createElement('span');
       dot.className = 'peek-dot';
-      dot.style.background = hexToCss(dieColor(d.materialId, d.slot));
+      // 自定义色直接取材质的实际颜色（含覆盖），比按 slot 推色更准
+      dot.style.background = '#' + d.bodyMesh.material.color.getHex().toString(16).padStart(6, '0');
 
       const name = document.createElement('span');
       name.className = 'peek-name';
-      name.textContent = d.name || `第 ${d.slot + 1} 颗`;
+      // 名字 + 代表的选项。名字和选项相同时不重复写（用户常把骰子按选项取名）
+      const label = d.name || `第 ${d.slot + 1} 颗`;
+      const suffix = d.option && d.option !== d.name ? ` · 代表：${d.option}` : '';
+      name.textContent = label + suffix;
 
-      // 没起名的那些降一档显示，让起了名的更突出
-      if (!d.name) row.classList.add('unnamed');
+      // 名字和选项都没有的降一档显示，让有信息的更突出
+      if (!d.name && !d.option) row.classList.add('unnamed');
 
       row.append(dot, name);
       el.appendChild(row);

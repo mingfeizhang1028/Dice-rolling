@@ -18,14 +18,15 @@ import { createDieBody } from '../physics/world.js';
 const bodyMaterialCache = new Map();   // `${materialId}:${slot}`
 const pipMaterialCache = new Map();    // materialId
 
-export function getBodyMaterial(materialId, slot) {
-  const key = `${materialId}:${slot}`;
+export function getBodyMaterial(materialId, slot, colorOverride = '') {
+  // 自定义色也进缓存，key 带色值，否则换色后拿到的还是旧色
+  const key = colorOverride ? `${materialId}:${slot}:${colorOverride}` : `${materialId}:${slot}`;
   const cached = bodyMaterialCache.get(key);
   if (cached) return cached;
 
   const v = getMaterial(materialId).visual;
   const mat = new MeshPhysicalMaterial({
-    color: dieColor(materialId, slot),
+    color: colorOverride || dieColor(materialId, slot),
     metalness: v.metalness,
     roughness: v.roughness,
     ior: v.ior,
@@ -75,14 +76,17 @@ export function getPipMaterial(materialId) {
  *
  * @param {object} opts
  * @param {string} opts.materialId
- * @param {number} opts.slot      0..2，决定区分色
+ * @param {number} opts.slot      0..，决定区分色
  * @param {CANNON.World} opts.world
  * @param {string} [opts.name]    名字。平时不显示，虚按时才浮出来
+ * @param {string} [opts.option]  这颗骰子代表的选项。长按浮窗里显示
+ * @param {number} [opts.size]    尺寸缩放系数（骰子多了时缩小，默认 1）
+ * @param {string} [opts.color]   自定义色 hex（空 = 材质默认色盘）
  */
-export function createDie({ materialId, slot, world, name = '' }) {
+export function createDie({ materialId, slot, world, name = '', option = '', size = 1, color = '' }) {
   const group = new Group();
 
-  const bodyMesh = new Mesh(getBodyGeometry(), getBodyMaterial(materialId, slot));
+  const bodyMesh = new Mesh(getBodyGeometry(), getBodyMaterial(materialId, slot, color));
   bodyMesh.castShadow = true;
   bodyMesh.receiveShadow = true;
   group.add(bodyMesh);
@@ -93,15 +97,19 @@ export function createDie({ materialId, slot, world, name = '' }) {
   pipMesh.receiveShadow = true;
   bodyMesh.add(pipMesh);
 
+  // 几何体是按默认尺寸造的，缩小用 group 的 scale 统一缩放（含点数）
+  if (size !== 1) group.scale.setScalar(size);
+
   // slot 要传下去：碰撞事件靠它认出是哪一颗，声音才能按材质分，
   // 声场定位也才能对上屏幕上那颗骰子
-  const body = createDieBody(materialId, slot);
+  const body = createDieBody(materialId, slot, size);
   world.addBody(body);
 
   const die = {
     slot,
     materialId,
     name,
+    option,
     group,
     bodyMesh,
     pipMesh,
@@ -114,10 +122,10 @@ export function createDie({ materialId, slot, world, name = '' }) {
     },
 
     /** 换材质（P3 设置里用）。物理和外观一起换，不用重建刚体 */
-    setMaterial(nextId, nextSlot = slot) {
+    setMaterial(nextId, nextSlot = slot, nextColor = '') {
       die.materialId = nextId;
       die.slot = nextSlot;
-      bodyMesh.material = getBodyMaterial(nextId, nextSlot);
+      bodyMesh.material = getBodyMaterial(nextId, nextSlot, nextColor);
       // 点数几何体是按材质造的（半径/凸出量不同），所以几何体和材质都要换
       pipMesh.geometry = getPipGeometry(nextId);
       pipMesh.material = getPipMaterial(nextId);

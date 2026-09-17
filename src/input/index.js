@@ -10,8 +10,8 @@ import { on } from '../core/bus.js';
 import { initPointer } from './pointer.js';
 import { initKeyboard } from './keyboard.js';
 
-export function initInput(canvasEl) {
-  initPointer(canvasEl);
+export function initInput(canvasEl, { getSwipeOn } = {}) {
+  initPointer(canvasEl, { getSwipeOn });
   initKeyboard();
 }
 

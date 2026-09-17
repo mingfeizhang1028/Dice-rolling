@@ -40,6 +40,9 @@ export function initResultCard(el) {
       case 'pick':
         renderPick(result);
         break;
+      case 'vote':
+        renderVote(result);
+        break;
       default:
         renderMulti(result);
         break;
@@ -128,6 +131,78 @@ export function initResultCard(el) {
 
     meta.append(dot, label);
     el.append(opt, meta);
+  }
+
+  function renderVote(r) {
+    if (r.winner === null) {
+      // 并列总和 —— 与对决的并列一样写成机会，不是故障
+      const title = document.createElement('div');
+      title.className = 'result-title';
+      title.textContent = '总分撞上了';
+
+      const list = document.createElement('div');
+      list.className = 'result-tie';
+      for (const idx of r.tied) {
+        const s = r.slots.find((x) => x.assigned === idx);
+        const row = document.createElement('div');
+        row.className = 'tie-row';
+
+        const dot = document.createElement('span');
+        dot.className = 'result-dot';
+        if (s) dot.style.background = s.color;
+
+        const text = document.createElement('span');
+        text.textContent = (s?.option || `第 ${idx + 1} 个`) + ` · 共 ${r.sums[idx]}`;
+
+        const val = document.createElement('span');
+        val.className = 'tie-value';
+        val.textContent = `${idx + 1}/${r.optionCount}`;
+
+        row.append(dot, text, val);
+        list.appendChild(row);
+      }
+
+      const hint = document.createElement('div');
+      hint.className = 'result-sub';
+      hint.textContent = '你更想选哪一颗？';
+
+      el.append(title, list, hint);
+      return;
+    }
+
+    const opt = document.createElement('div');
+    opt.className = 'result-option';
+    opt.textContent = r.slots.find((s) => s.assigned === r.winner)?.option || `第 ${r.winner + 1} 个`;
+
+    const meta = document.createElement('div');
+    meta.className = 'result-meta';
+
+    const dot = document.createElement('span');
+    dot.className = 'result-dot';
+    const winnerSlot = r.slots.find((s) => s.assigned === r.winner);
+    if (winnerSlot) dot.style.background = winnerSlot.color;
+
+    const label = document.createElement('span');
+    label.textContent = `总和 ${r.max} · 共 ${r.optionCount} 个选项`;
+
+    meta.append(dot, label);
+
+    // 各选项总分明细：一眼看出赢在哪儿
+    const tally = document.createElement('div');
+    tally.className = 'result-sub';
+    tally.textContent = voteTally(r);
+
+    el.append(opt, meta, tally);
+  }
+
+  /** 各选项总分明细，如「甲 8 · 乙 5」 */
+  function voteTally(r) {
+    const parts = [];
+    for (let i = 0; i < r.optionCount; i++) {
+      const s = r.slots.find((x) => x.assigned === i);
+      parts.push(`${s?.option || `第 ${i + 1} 个`} ${r.sums[i]}`);
+    }
+    return parts.join(' · ');
   }
 
   function tieRow(s) {

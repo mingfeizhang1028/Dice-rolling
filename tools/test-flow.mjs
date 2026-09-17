@@ -57,5 +57,26 @@ check('选项有空串 → multi', computeResult([5,5], {options:['甲','']}, di
 const d = dice(1); d[0].name = '要不要搬家';
 check('名字带进结果', computeResult([4], {options:[]}, d).name, '要不要搬家');
 
+// ── 多数决（vote）：手动分配 · 比总和 ──
+// 2 选项、3 骰：assignment [0,1,0] → 甲取 values[0]+values[2]，乙取 values[1]
+const v = computeResult([2,6,5], {decisionMode:'vote', options:['甲','乙'], assignment:[0,1,0]}, dice(3));
+check('多数决 kind', v.kind, 'vote');
+check('多数决 sums', v.sums, [7,6]);
+check('多数决 winner', v.winner, 0);
+
+// 未提供 assignment → 自动 i % N（3 骰 2 选项 → 甲,乙,甲）
+const vAuto = computeResult([2,6,5], {decisionMode:'vote', options:['甲','乙']}, dice(3));
+check('多数决 自动分配 sums', vAuto.sums, [7,6]);
+
+// 越界 assignment 钳制：5 → 钳到 1（选项2），-3 → 钳到 0（选项1）
+const vClamp = computeResult([1,6], {decisionMode:'vote', options:['甲','乙'], assignment:[5,-3]}, dice(2));
+check('多数决 钳制 sums', vClamp.sums, [6,1]);
+
+// 并列
+const vt = computeResult([4,4], {decisionMode:'vote', options:['甲','乙'], assignment:[0,1]}, dice(2));
+check('多数决并列 winner null', vt.winner, null);
+check('多数决并列 tied', vt.tied, [0,1]);
+check('多数决并列 sums', vt.sums, [4,4]);
+
 console.log(fail ? `\n✗ ${fail} 项失败` : '\n✓ 全部通过');
 process.exit(fail ? 1 : 0);

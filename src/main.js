@@ -38,7 +38,7 @@ import { createFlow, MAX_DICE } from './flow.js';
 import { initInput } from './input/index.js';
 import { on } from './core/bus.js';
 import { add as addRaf } from './core/raf.js';
-import { PHYSICS } from './config.js';
+import { PHYSICS, dieScaleFor } from './config.js';
 import { MATERIAL_IDS } from './materials.js';
 
 // ── 感官层 ──
@@ -64,7 +64,9 @@ import {
 } from './haptics.js';
 import {
   enable as enableShake,
+  disable as disableShake,
   suppress as suppressShake,
+  isSupported as isShakeSupported,
   getStats as shakeStats,
 } from './input/shake.js';
 import { buildShell } from './ui/shell.js';
@@ -78,6 +80,11 @@ import { runSelfTest } from './selftest.js';
 const params = new URLSearchParams(location.search);
 const caps = detect();
 const settings = load();
+
+// 环境音的常开档位。用户要的是"开始就有、一直到关闭"，所以平时维持一个
+// 稳定基线，不跟着甩动/投掷升高；只在揭晓一瞬间轻降一点留个性，不回 0。
+const AMBIENCE_STEADY = 0.5;
+const AMBIENCE_REVEAL_DIP = 0.2;
 
 const canvas = document.getElementById('stage');
 const root = document.body;
@@ -193,7 +200,7 @@ function unlockSenses() {
   // enable() 是 async，但 requestPermission() 落在第一个 await 之前，
   // 所以同步调它就等于在栈里发出请求。故意不 await ——
   // 等授权结果会把 start() 推到手势之外
-  if (caps.canMotion) {
+  if (caps.canMotion && settings.shakeOn) {
     enableShake().catch(() => {
       /* enable 自己绝不 reject，这里是第二道保险 */
     });
@@ -271,7 +278,22 @@ function boot() {
 
   initResultCard(shell.result);
   initPeekNames(shell.peek, { getDice: () => dice });
-  initInput(canvas);
+  initInput(canvas, { getSwipeOn: () => settings.swipeOn });
+
+  // 摇晃投掷开关：关掉就卸下 devicemotion 监听，省电也避免揣兜误触发；
+  // 再开则重新启用（已授权则直接挂上，未授权重新请求）
+  const applyShake = (on) => {
+    if (!caps.canMotion) return;
+    if (on) {
+      if (!isShakeSupported()) {
+        enableShake().catch(() => {
+          /* enable 绝不 reject，这里是第二道保险 */
+        });
+      }
+    } else {
+      disableShake();
+    }
+  };
 
   const editor = initEditor(root, {
     settings,
@@ -280,6 +302,7 @@ function boot() {
     onReline: requestReline,
     onTheme: applyTheme,
     onSenses: () => senses.applySettings(),
+    onShakeToggle: applyShake,
   });
   shell.settingsBtn.addEventListener('click', () => editor.open());
 
@@ -406,19 +429,12 @@ function createSenses() {
 
   on('flow:change', ({ to }) => {
     if (!ambience) return;
-    // SETTLING 没有自己的档位 —— 它就是"淡出到揭晓的 0"。
-    // 斜坡长度取 pauseMs：声音正好在结果浮出来那一刻散尽，
-    // 这 600ms 的空白是节奏本身，不是等待
-    const level = to === 'SETTLING' ? AMB_LEVELS.RESULT : AMB_LEVELS[to];
-    if (level === undefined) return;
-
-    // ⚠️ ambience 切后台会自己停，而且**故意不自动恢复** ——
-    //    恢复点就在这里（见 ambience.js 的 onVisibility）。
-    //    少了这一句，用户切出去再切回来之后整局静音，直到刷新页面。
-    //    start() 幂等，正常路径下是空操作
-    if (level > 0) ambience.start();
-
-    ambience.fadeTo(level, to === 'SETTLING' ? settings.pauseMs : 220);
+    // 环境音常开：平时维持一个稳定基线。揭晓一瞬间轻降(不静音)留一点
+    // 节奏，揭晓完回 IDLE 时再回到基线。甩动/投掷不再加油量。
+    // 斜坡长度取 pauseMs：轻降正好落在结果浮出那一刻四周。
+    const reveal = to === 'SETTLING' || to === 'RESULT';
+    ambience.start(); // 幂等；这是切后台回前台之后的恢复点
+    ambience.fadeTo(reveal ? AMBIENCE_REVEAL_DIP : AMBIENCE_STEADY, reveal ? settings.pauseMs : 320);
   });
 
   // ── 落定 → 触觉签名 ──
@@ -437,16 +453,11 @@ function createSenses() {
     flow.toss({ power, dirX: 0, dirZ: 0, source: 'shake' });
   });
 
-  // setEnergy 内部是 setTargetAtTime。每秒调 60 次等于每秒排 60 个
-  // 自动化事件，而输入本身已经被 200ms 平滑过了 —— 值几乎不动。
-  // 降到 ~10Hz 就够，省下的是音频线程上的无谓工作
-  let lastEnergyAt = 0;
-  on('shake:energy', ({ level }) => {
-    const now = performance.now();
-    if (now - lastEnergyAt < 100) return;
-    lastEnergyAt = now;
-    ambience?.setEnergy(level);
-  });
+  // 环境音的落定回弹：切到后台停、回到前台靠 flow:change 补 start()（见下）。
+  // 注意：这里**故意不再接 shake:energy**。雨声不该跟着甩动升高 ——
+  // 否则甩一下就只有"雨声变亮"这一种声音，骰子材质的撞击音反被盖住，
+  // 用户会觉得"晃动的声音跟材质对不上"。甩动的意思是掷骰，掷出来的
+  // 是材质撞击音，而不是环境的雨。环境音保持平稳即可。
 
   // 手机揣兜里不该还一震一震的 —— 用户会以为程序出问题了
   document.addEventListener('visibilitychange', hapticsVisibility);
@@ -481,7 +492,8 @@ function createSenses() {
           a.setKind(settings.ambienceKind);
           a.start();
           // 当场补上当前状态应该有的档位，别从 0 干等状态机来推
-          a.fadeTo(AMB_LEVELS[flow?.state] ?? AMB_LEVELS.IDLE, 220);
+          const st = flow?.state;
+          a.fadeTo((st === 'SETTLING' || st === 'RESULT') ? AMBIENCE_REVEAL_DIP : AMBIENCE_STEADY, 220);
         }
       } else if (!want && ambience) {
         ambience.stop();
@@ -541,12 +553,32 @@ function rebuildDice() {
 
   if (!world) return;
 
+  // 骰子多了就整体缩小，让固定托盘装得下（N≤4 不缩，=1）
+  const size = dieScaleFor(settings.diceCount);
+
+  // 每颗骰子代表的选项：对决 = 第 i 颗对第 i 项；多数决 = assignment 或自动 i % N
+  const filled = (settings.options || []).map((s) => (s || '').trim()).filter(Boolean);
+  const F = filled.length;
+  const assignedIdx = (i) => {
+    if (!F) return -1;
+    if (settings.decisionMode === 'vote') {
+      const a = Number(settings.assignment?.[i]);
+      const idx = Number.isInteger(a) && a >= 0 ? a : i % F;
+      return Math.max(0, Math.min(F - 1, idx));
+    }
+    return Math.min(F - 1, i);   // duel：一骰一选项
+  };
+
   for (let i = 0; i < settings.diceCount; i++) {
+    const idx = assignedIdx(i);
     const d = createDie({
       materialId: settings.material,
       slot: i,
       world,
+      size,
       name: (settings.names[i] || '').trim(),
+      option: idx >= 0 ? filled[idx] : '',
+      color: settings.colors?.[i] || '',
     });
     if (scene) scene.add(d.group);
     dice.push(d);
@@ -561,13 +593,8 @@ function rebuildDice() {
  * 两个目的：① 不要从出生高度掉下来 —— 开局"啪"掉几颗骰子会把静气打散；
  * ② 彼此不能重叠。
  *
- * ⚠️ 间距必须大于骰子边长（1.0）。早先用 `t * 0.8` 沿一条线排，
- *    四颗时相邻距离只有 0.96 —— 比骰子还窄，开局是几颗互相插在一起的
- *    骰子，物理一启动就"砰"地弹开。这种错误在静态截图里不明显，
- *    但用户第一眼就会看到。
- *
- * 三颗排成一行、四颗排成 2×2：都是"一副骰子"的自然摆法，
- * 而且最小间距 1.35 / 1.44 都留出了肉眼可见的缝。
+ * ⚠️ 间距必须大于骰子边长。1–4 颗用下面的固定摆法（骰子此时不缩放，边长 1），
+ *    5–12 颗骰子缩小了（dieScaleFor），改用网格铺开，同样保证不漏空不重叠。
  */
 const LAYOUT = {
   1: [[0, 0]],
@@ -576,15 +603,33 @@ const LAYOUT = {
   4: [[-0.72, -0.72], [0.72, -0.72], [-0.72, 0.72], [0.72, 0.72]],
 };
 
-function restDice() {
-  const spots = LAYOUT[dice.length];
-  if (!spots) return;
+/** 5+ 颗：正方形网格，居中铺在托盘里（保持间距 = 边长×1.05） */
+function gridSpots(N, half) {
+  const cols = Math.ceil(Math.sqrt(N));
+  const spacing = half * 2 * 1.05;
+  const rows = Math.ceil(N / cols);
+  const offX = ((cols - 1) * spacing) / 2;
+  const offZ = ((rows - 1) * spacing) / 2;
+  const spots = [];
+  for (let i = 0; i < N; i++) {
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    spots.push([c * spacing - offX, r * spacing - offZ]);
+  }
+  return spots;
+}
 
-  for (let i = 0; i < dice.length; i++) {
+function restDice() {
+  const n = dice.length;
+  const half = PHYSICS.dieHalf * dieScaleFor(n);
+  const fixed = LAYOUT[n];
+  const spots = fixed || gridSpots(n, half);
+
+  for (let i = 0; i < n; i++) {
     const b = dice[i].body;
     const [x, z] = spots[i];
 
-    b.position.set(x, 0.5, z);
+    b.position.set(x, half, z);
     b.velocity.setZero();
     b.angularVelocity.setZero();
     b.force.setZero();

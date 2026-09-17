@@ -73,9 +73,9 @@ export function initChips(el, { settings, onMaterial, onCount }) {
     plus.disabled = n >= MAX_DICE;
 
     // 对决时颗数 = 参与选项数，不让手动改 —— 改了就对上不号了。
-    // 选号（pick）时选项只是清单，颗数独立，仍可自由加减。
-    const inDuel = settings.decisionMode !== 'pick';
-    const lockedByOptions = inDuel && (settings.options || []).filter((s) => s.trim()).length > 0;
+    // 选号/多数决时选项只是清单或票池，颗数独立，仍可自由加减。
+    const lockedByOptions = settings.decisionMode === 'duel'
+      && (settings.options || []).filter((s) => s.trim()).length > 0;
     countRow.classList.toggle('locked', lockedByOptions);
     minus.disabled = minus.disabled || lockedByOptions;
     plus.disabled = plus.disabled || lockedByOptions;

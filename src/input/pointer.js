@@ -33,7 +33,11 @@ let startY = 0;
 let startT = 0;
 let samples = [];
 
-export function initPointer(target) {
+/** 滑动/点击投掷是否允许。编辑页可关（长按看名字不受影响） */
+let swipeGetter = () => true;
+
+export function initPointer(target, { getSwipeOn } = {}) {
+  swipeGetter = getSwipeOn || (() => true);
   target.addEventListener('pointerdown', onDown, { passive: true });
   target.addEventListener('pointermove', onMove, { passive: true });
   target.addEventListener('pointerup', onUp, { passive: true });
@@ -98,6 +102,11 @@ function onUp(e) {
 
   const dt = performance.now() - startT;
   const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
+
+  if (!swipeGetter()) {
+    // 滑动投掷被关：点击/滑动都不抛，但长按看名字照常（上面已处理）
+    return;
+  }
 
   if (dist < TAP_MAX_DIST && dt < TAP_MAX_MS) {
     emit('intent:toss', { power: TAP_POWER, dirX: 0, dirZ: 0, source: 'tap' });

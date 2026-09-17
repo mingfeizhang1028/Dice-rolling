@@ -8,10 +8,16 @@ export const DEFAULTS = {
   material: 'jade',
 
   // ── 决策 ──
-  diceCount: 1,            // 1..4。选号/无选项时可手调；对决时被锁为参与选项数
-  decisionMode: 'duel',   // 'duel' 对决（一骰一选项，点数高者胜）；'pick' 选号（合计取模，数到第几个）
-  options: [],            // 选项列表。对决时颗数 = 参与选项数（≤4）；选号时颗数独立
-  names: ['', '', '', ''],   // 各颗骰子的名字。空字符串表示没起名
+  diceCount: 1,            // 1..12。选号/多数决时可手调；对决时被锁为参与选项数
+  decisionMode: 'duel',   // 'duel' 对决（一骰一选项，点数高者胜）；'pick' 选号；'vote' 多数决（手动分配·比总和）
+  options: [],            // 选项列表。对决时颗数 = 参与选项数（≤4）；选号/多数决时颗数独立
+  names: ['', '', '', '', '', '', '', '', '', '', '', ''],   // 各颗骰子的名字。空字符串表示没起名
+  colors: [],             // 各颗骰子的自定义色（hex 字符串）。空 = 用材质默认色盘
+  assignment: [],         // 多数决：每颗骰子归属的选项索引。空 = 自动 i % 选项数
+
+  // ── 输入 ──
+  swipeOn: true,           // 滑动/点击投掷
+  shakeOn: true,           // 摇晃投掷
 
   // ── 结果 ──
   yesMapping: 'high',    // 'high' = 点数 ≥4 为是；'oddEven' = 奇数为是
@@ -30,6 +36,15 @@ export const DEFAULTS = {
   // ── 物理 ──
   gravityScale: 1,       // 只影响观感速度，不影响投掷力度语义
 };
+
+/**
+ * 骰子按数量缩放的尺寸系数。托盘固定，骰子多了就缩小，让它们装得下：
+ * 截面面积大致恒定（每颗约 1/N 个托盘），线性尺寸取 sqrt(4/N)，
+ * 下限 0.5 保证单颗仍可辨；N≤4 时不缩（=1）。
+ */
+export function dieScaleFor(count) {
+  return Math.max(0.5, Math.min(1, Math.sqrt(4 / count)));
+}
 
 /** 物理常量。改这些会显著改变手感，动手前先读注释。 */
 export const PHYSICS = {
@@ -99,7 +114,7 @@ export const SCENE = {
   // 挡墙高度。**这是一道看不见的物理挡板**，比画面里的托盘边框高得多，
   // 只被 world.js 用，不影响任何视觉。
   // ⚠️ 约束：spawnHeight + (MAX_DICE-1)*slotLift < wallHeight
-  //    1.5 + 3*0.12 = 1.86 < 3.0 ✓
+  //    1.5 + 11*0.12 = 2.82 < 3.0 ✓（MAX_DICE 已提到 12）
   // 取 3.0 而不是刚好够用的 1.9：墙面有 0.55 的弹性，骰子撞墙会往上弹，
   // 矮墙会被直接弹出去。留足余量比事后调弹性省事。
   wallHeight: 3.0,

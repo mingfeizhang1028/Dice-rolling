@@ -18,23 +18,25 @@ import { createSettleWatcher } from './physics/settle.js';
 import { readAll } from './dice/face-reader.js';
 import { dieColor, hexToCss } from './materials.js';
 
-/** 4 = 1 个主色 + 3 个 colorAlt。色彩系统正好支持这么多 */
-export const MAX_DICE = 4;
+/** 骰子颗数上限。骰子多了会按 dieScaleFor 缩小装进固定托盘。 */
+export const MAX_DICE = 12;
 
 /**
  * 点数 → 结果。纯函数，不碰场景也不碰 DOM，所以能单独测。
  *
- * 两条决策路子（编辑页里可切）：
+ * 三种决策路子（编辑页里可切）：
  *   对决（duel）：每个选项一颗骰子，点数高者胜；并列时明确告诉"撞上了"。
- *   选号（pick）：选项不限数量，把所有骰子点数加起来、从头循环数到第几个
- *       就是结果（「点数和 X → 第 几个」）。
+ *   选号（pick）：选项不限数量，把所有骰子点数加起来、从头循环数到第几个。
+ *   多数决（vote）：每颗骰子手动归属一个选项，各选项取自己骰子的点数总和，高者胜。
  *   没有填选项时：单颗 = 点数 + 是与否；多颗 = 只是点数列表。
  */
 export function computeResult(values, settings, dice) {
   const filled = (settings.options || []).map((s) => (s || '').trim()).filter((s) => s !== '');
   const N = filled.length;
   const n = values.length;
-  const mode = settings.decisionMode === 'pick' ? 'pick' : 'duel';
+  const mode = ['pick', 'vote', 'duel'].includes(settings.decisionMode)
+    ? settings.decisionMode
+    : 'duel';
 
   // ── 选号：多颗骰合计，取模选一个选项 ──
   if (mode === 'pick' && N > 0) {
@@ -50,6 +52,47 @@ export function computeResult(values, settings, dice) {
       option: filled[idx],
       optionCount: N,
       color: d0 ? hexToCss(dieColor(d0.materialId, 0)) : null,
+    };
+  }
+
+  // ── 多数决：手动分配 · 比总和 ──
+  // 每颗骰子归属一个选项（settings.assignment[i]，缺省自动 i % N），
+  // 各选项把自己的骰子点数相加，总和最大者胜；并列则并列。
+  // 骰子数不匀时，骰子多的选项天然占优 —— 编辑页负责提示，这里只管算。
+  if (mode === 'vote' && N > 0) {
+    const assn = (settings.assignment || []).map((a) => Number(a));
+    const sums = new Array(N).fill(0);
+    const assigned = [];
+    for (let i = 0; i < n; i++) {
+      // 整数才认作手动分配，否则自动 i % N；统一钳到 [0, N-1]
+      let a = Number.isInteger(assn[i]) ? assn[i] : i % N;
+      a = Math.max(0, Math.min(N - 1, a));
+      sums[a] += values[i];
+      assigned.push(a);
+    }
+
+    let max = 0;
+    for (const s of sums) if (s > max) max = s;
+
+    const winners = [];
+    for (let i = 0; i < N; i++) if (sums[i] === max) winners.push(i);
+
+    return {
+      kind: 'vote',
+      values,
+      sums,
+      max,
+      winner: winners.length === 1 ? winners[0] : null,
+      tied: winners.length > 1 ? winners : [],
+      optionCount: N,
+      slots: dice.map((d, i) => ({
+        slot: i,
+        name: d.name || '',
+        option: filled[assigned[i]] || '',
+        assigned: assigned[i],
+        value: values[i],
+        color: hexToCss(dieColor(d.materialId, i)),
+      })),
     };
   }
 
