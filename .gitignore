@@ -10,3 +10,6 @@ tools/out/
 
 # 本机权限设置，按 Claude Code 的惯例不入库
 .claude/settings.local.json
+
+# 本地 IDE 工作目录
+.trae/

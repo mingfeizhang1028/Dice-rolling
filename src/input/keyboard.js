@@ -9,6 +9,10 @@ export function initKeyboard() {
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
 
+    // 编辑页打开时，焦点很可能在输入框里 —— 空格/回车应该在打字，
+    // 不能顺手把骰子扔出去。桌面开发用，真机手指输入不走这一支。
+    if (document.body.classList.contains('editing')) return;
+
     switch (e.key) {
       case ' ':
       case 'Enter':

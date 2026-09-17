@@ -24,17 +24,41 @@ export const MAX_DICE = 4;
 /**
  * 点数 → 结果。纯函数，不碰场景也不碰 DOM，所以能单独测。
  *
- * 三条分支（计划里定的，不在这里改）：
- *   有选项且颗数对得上 → 点数最高者胜；并列时明确告诉用户"撞上了"
- *   单颗无选项        → 点数 + 是与否
- *   多颗无选项        → 只是点数列表
+ * 两条决策路子（编辑页里可切）：
+ *   对决（duel）：每个选项一颗骰子，点数高者胜；并列时明确告诉"撞上了"。
+ *   选号（pick）：选项不限数量，把所有骰子点数加起来、从头循环数到第几个
+ *       就是结果（「点数和 X → 第 几个」）。
+ *   没有填选项时：单颗 = 点数 + 是与否；多颗 = 只是点数列表。
  */
 export function computeResult(values, settings, dice) {
-  const options = (settings.options || []).map((s) => (s || '').trim());
-  const filled = options.filter((s) => s !== '');
+  const filled = (settings.options || []).map((s) => (s || '').trim()).filter((s) => s !== '');
+  const N = filled.length;
   const n = values.length;
+  const mode = settings.decisionMode === 'pick' ? 'pick' : 'duel';
 
-  if (n > 0 && filled.length === n) {
+  // ── 选号：多颗骰合计，取模选一个选项 ──
+  if (mode === 'pick' && N > 0) {
+    const total = values.reduce((a, b) => a + b, 0);
+    // total ≥ n ≥ 1，所以 (total-1) % N 不会为负；再兜一层 +N 防手滑
+    const idx = ((total - 1) % N + N) % N;
+    const d0 = dice[0];
+    return {
+      kind: 'pick',
+      values,
+      total,
+      optionIndex: idx,
+      option: filled[idx],
+      optionCount: N,
+      color: d0 ? hexToCss(dieColor(d0.materialId, 0)) : null,
+    };
+  }
+
+  // ── 对决：一骰一选项，点数高者胜 ──
+  // ⚠️ 只有当骰子数正好等于"参与选项数"才算对决；不符就退化成多骰点数。
+  //    参与选项数 = min(选项数, 骰子数)。选项超过 4 时只让前 4 个参加，
+  //    n 恒等于 min(N, MAX_DICE)，所以守卫写成 n === min(N, 4)。
+  if (mode === 'duel' && N > 0 && n === Math.min(N, 4)) {
+    const active = filled.slice(0, n);
     let max = -1;
     for (const v of values) if (v > max) max = v;
 
@@ -51,7 +75,7 @@ export function computeResult(values, settings, dice) {
       slots: dice.map((d, i) => ({
         slot: i,
         name: d.name || '',
-        option: options[i] || '',
+        option: active[i] || '',
         value: values[i],
         color: hexToCss(dieColor(d.materialId, i)),
       })),

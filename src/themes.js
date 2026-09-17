@@ -134,11 +134,11 @@ export const THEMES = {
       env: { kind: 'gradient', top: 0xffffff, bottom: 0xc8c8c4, intensity: 1.35 },
 
       board: {
-        color: 0xe9e9e6,
+        color: 0xd0d0c9,
         roughness: 0.68,
         metalness: 0.0,
         glow: { color: 0xffffff, opacity: 0.0, radius: 3.0 },
-        wall: 0xd6d6d2,
+        wall: 0xb0b0a9,
       },
 
       // 纯白下金属必须靠环境反射撑起来，否则就是一块发黑的铁

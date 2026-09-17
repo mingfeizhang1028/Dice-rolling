@@ -37,6 +37,9 @@ export function initResultCard(el) {
       case 'choice':
         renderChoice(result);
         break;
+      case 'pick':
+        renderPick(result);
+        break;
       default:
         renderMulti(result);
         break;
@@ -103,6 +106,25 @@ export function initResultCard(el) {
     label.textContent = w.name && w.name !== w.option
       ? `${w.name} · ${w.value} 点`
       : `${w.value} 点`;
+
+    meta.append(dot, label);
+    el.append(opt, meta);
+  }
+
+  function renderPick(r) {
+    const opt = document.createElement('div');
+    opt.className = 'result-option';
+    opt.textContent = r.option;
+
+    const meta = document.createElement('div');
+    meta.className = 'result-meta';
+
+    const dot = document.createElement('span');
+    dot.className = 'result-dot';
+    if (r.color) dot.style.background = r.color;
+
+    const label = document.createElement('span');
+    label.textContent = `点数和 ${r.total} · 第 ${r.optionIndex + 1}/${r.optionCount}`;
 
     meta.append(dot, label);
     el.append(opt, meta);

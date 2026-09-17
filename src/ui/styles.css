@@ -467,6 +467,344 @@ body {
   transform: scale(1.4);
 }
 
+/* ── 全屏编辑页 ─────────────────────────────────────── */
+
+.editor {
+  position: fixed;
+  inset: 0;
+  z-index: 80;                 /* 盖住 .ui(10)/.peek(20)，留给 .fatal(300) */
+
+  background: var(--bg);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: auto;          /* 这一页要能滑，不能吃手势 */
+
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 260ms var(--ease), transform 260ms var(--ease);
+}
+
+.editor.on {
+  opacity: 1;
+  transform: none;
+}
+
+.editor-inner {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: calc(var(--safe-top) + 14px) 18px calc(var(--safe-bottom) + 28px);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.editor-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+}
+
+.editor-close {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  padding: 7px 16px;
+  cursor: pointer;
+  transition: color 250ms var(--ease), border-color 250ms var(--ease);
+}
+
+.editor-close:active {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.editor-section-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  color: var(--ink-faint);
+}
+
+/* ── 选项 / 命名 ── */
+
+.editor-options,
+.editor-names {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editor-option-row,
+.editor-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.editor-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.editor input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 16px;             /* 16px 防 iOS 聚焦缩放 */
+  line-height: 1.3;
+  padding: 11px 13px;
+  outline: none;
+  transition: border-color 250ms var(--ease);
+}
+
+.editor input[type='text']::placeholder {
+  color: var(--ink-faint);
+}
+
+.editor input[type='text']:focus {
+  border-color: var(--accent);
+}
+
+.editor-del {
+  appearance: none;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 8px 11px;
+  cursor: pointer;
+}
+
+.editor-del:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.editor-del:active {
+  color: var(--ink);
+}
+
+.editor-add {
+  align-self: flex-start;
+  appearance: none;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  padding: 9px 15px;
+  cursor: pointer;
+}
+
+.editor-add:active {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.editor-note {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+
+/* ── 通用控件 ── */
+
+.editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editor-label {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+}
+
+.editor-seg {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.editor-seg-btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: color 250ms var(--ease), border-color 250ms var(--ease);
+}
+
+.editor-seg-btn.on {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+/* ── 主题 ── */
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.editor-theme {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 11px 13px;
+  cursor: pointer;
+  transition: border-color 250ms var(--ease);
+}
+
+.editor-theme.on {
+  border-color: var(--accent);
+}
+
+.editor-theme-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  flex: none;
+  box-shadow: 0 0 0 1px rgba(127, 127, 127, 0.35);
+}
+
+/* ── 开关 / 滑杆 ── */
+
+.toggle-field {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.editor-toggle {
+  appearance: none;
+  position: relative;
+  width: 46px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 250ms var(--ease), border-color 250ms var(--ease);
+}
+
+.editor-toggle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  transform: translateY(-50%);
+  transition: transform 250ms var(--ease), background-color 250ms var(--ease);
+}
+
+.editor-toggle.on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.editor-toggle.on::after {
+  transform: translate(20px, -50%);
+  background: var(--bg);
+}
+
+.vol-field input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.editor-sound,
+.editor-haptics {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── 数据 ── */
+
+.editor-row-btns {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.editor-data-btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 9px 15px;
+  cursor: pointer;
+}
+
+.editor-data-btn:active {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.editor-data-btn.danger {
+  color: #d4776b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editor {
+    transition-duration: 1ms;
+  }
+}
 /* ── 主题交叉淡入覆盖层 ─────────────────────────────────── */
 
 .theme-fade {

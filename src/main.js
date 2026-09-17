@@ -71,6 +71,7 @@ import { buildShell } from './ui/shell.js';
 import { initChips } from './ui/chips.js';
 import { initResultCard } from './ui/result-card.js';
 import { initPeekNames } from './ui/peek-names.js';
+import { initEditor } from './ui/editor.js';
 import { initDebugPanel, attachDebugToggle } from './ui/debug-panel.js';
 import { runSelfTest } from './selftest.js';
 
@@ -228,6 +229,29 @@ function boot() {
   // chips 自己不禁用 —— 禁用了要等一局结束才生效，那更让人困惑
   const canChange = () => flow.state === 'IDLE' || flow.state === 'RESULT';
 
+  // 编辑页里改选项/命名/颗数要重建骰子；若恰逢骰子在半空，先记下来，
+  // 等回 IDLE/RESULT 再补重建 —— 否则 edits 会留下一地残影
+  let relinePending = false;
+  const requestReline = () => {
+    if (canChange()) applyChange();
+    else relinePending = true;
+  };
+  on('flow:change', ({ to }) => {
+    if ((to === 'IDLE' || to === 'RESULT') && relinePending) {
+      relinePending = false;
+      applyChange();
+    }
+  });
+
+  // 主题是跨场景的：CSS 变量（编辑页自己也算页面的一部分，得当场换肤）、
+  // 灯光/托盘/环境、以及骰子材质的覆盖系数，三者一起换
+  const applyTheme = (id) => {
+    applyCss(id);
+    applySceneTheme(id, caps.tier, { fade: true });
+    applyMaterialOverrides(id, dice);
+    save(settings);
+  };
+
   const chips = initChips(shell.chips, {
     settings,
     onMaterial: (id) => {
@@ -248,6 +272,16 @@ function boot() {
   initResultCard(shell.result);
   initPeekNames(shell.peek, { getDice: () => dice });
   initInput(canvas);
+
+  const editor = initEditor(root, {
+    settings,
+    caps,
+    save,
+    onReline: requestReline,
+    onTheme: applyTheme,
+    onSenses: () => senses.applySettings(),
+  });
+  shell.settingsBtn.addEventListener('click', () => editor.open());
 
   // 存储不可用时说一声。悄悄不保存是最让人恼火的失败方式
   if (!isPersistent()) {
@@ -428,6 +462,35 @@ function createSenses() {
       setSfxMaterial(id);
       warmupSfx(id, ctx).catch(() => {});
     },
+
+    /**
+     * 编辑页改设置后即时生效。只做"要不要开、开哪种、开多响"，
+     * 不重建骰子 —— 那些走 onReline。
+     */
+    applySettings() {
+      setSfxVolume(settings.sfxVolume);
+      setAmbVolume(settings.ambienceVolume);
+      setMuted(!settings.soundOn);
+      setHapticsEnabled(settings.hapticsOn && isHapticsAvailable());
+
+      const want = settings.soundOn && settings.ambienceOn;
+      if (want && !ambience) {
+        const a = createAmbience();
+        if (a) {
+          ambience = a;
+          a.setKind(settings.ambienceKind);
+          a.start();
+          // 当场补上当前状态应该有的档位，别从 0 干等状态机来推
+          a.fadeTo(AMB_LEVELS[flow?.state] ?? AMB_LEVELS.IDLE, 220);
+        }
+      } else if (!want && ambience) {
+        ambience.stop();
+        ambience = null;
+      } else if (ambience) {
+        ambience.setKind(settings.ambienceKind);
+      }
+    },
+
     getStats() {
       return {
         ...audioStats(),

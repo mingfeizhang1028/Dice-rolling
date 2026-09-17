@@ -7,10 +7,11 @@ export const DEFAULTS = {
   theme: 'darkroom',
   material: 'jade',
 
-  // ── 骰子 ──
-  diceCount: 1,          // 1..3；options 非空时被覆盖为 options.length
-  names: ['', '', ''],   // 各颗骰子的名字。空字符串表示没起名
-  options: [],           // 选项。非空时颗数 = 选项数，点数最高者胜
+  // ── 决策 ──
+  diceCount: 1,            // 1..4。选号/无选项时可手调；对决时被锁为参与选项数
+  decisionMode: 'duel',   // 'duel' 对决（一骰一选项，点数高者胜）；'pick' 选号（合计取模，数到第几个）
+  options: [],            // 选项列表。对决时颗数 = 参与选项数（≤4）；选号时颗数独立
+  names: ['', '', '', ''],   // 各颗骰子的名字。空字符串表示没起名
 
   // ── 结果 ──
   yesMapping: 'high',    // 'high' = 点数 ≥4 为是；'oddEven' = 奇数为是

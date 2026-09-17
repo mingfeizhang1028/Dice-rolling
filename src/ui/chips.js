@@ -72,12 +72,14 @@ export function initChips(el, { settings, onMaterial, onCount }) {
     minus.disabled = n <= 1;
     plus.disabled = n >= MAX_DICE;
 
-    // 有选项时颗数由选项数决定，不让手动改 —— 改了就对不上号了
-    const lockedByOptions = (settings.options || []).filter((s) => s.trim()).length > 0;
+    // 对决时颗数 = 参与选项数，不让手动改 —— 改了就对上不号了。
+    // 选号（pick）时选项只是清单，颗数独立，仍可自由加减。
+    const inDuel = settings.decisionMode !== 'pick';
+    const lockedByOptions = inDuel && (settings.options || []).filter((s) => s.trim()).length > 0;
     countRow.classList.toggle('locked', lockedByOptions);
     minus.disabled = minus.disabled || lockedByOptions;
     plus.disabled = plus.disabled || lockedByOptions;
-    if (lockedByOptions) countLabel.textContent = `${n} 颗 · 按选项`;
+    if (lockedByOptions) countLabel.textContent = `${n} 颗 · 对决`;
   }
 
   render();
