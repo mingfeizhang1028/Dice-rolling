@@ -7,7 +7,8 @@
  *       CSS 必须第一个生效。它在 WebGL 就绪之前就要把页面染成主题色，
  *       否则用户会看到一瞬白底 —— 在暗室主题下这一瞬格外刺眼。
  *
- *   t1  用户点"开始"
+ *   t1  用户点"开始" → unlockSenses()
+ *       音频上下文、震动探针、DeviceMotion 授权，三样一起拿
  *
  *   t2  createView → createWorld → 造骰子 → 挂主题
  *       骰子要在挂主题之前造好，applyMaterialOverrides 才有东西可作用
@@ -18,11 +19,11 @@
  *
  *   t4  flow.go('IDLE') + 显示 UI
  *
- * ⚠️ 为什么保留"开始"按钮：P2 的音频解锁、DeviceMotion 授权、
+ * ⚠️ 为什么保留"开始"按钮：音频解锁、DeviceMotion 授权、
  *    navigator.vibrate 三者都要求用户手势，而且必须落在同一个同步栈里。
  *    甩动路径下投掷发生在 devicemotion 回调里 —— 那不是手势，只能靠
  *    sticky activation 撑住。一次点击同时拿齐三样，是最省事的做法。
- *    现在还没有音频，按钮的另一个作用是节奏：先静一下，再开始。
+ *    按钮的另一个作用是节奏：先静一下，再开始。
  *
  * ⚠️ 任何一步失败都只降级、不阻断。这个文件里没有一条路径会导致白屏。
  */
@@ -35,7 +36,37 @@ import { createWorld, stepWorld, getWorld } from './physics/world.js';
 import { createDie, disposeDice } from './dice/die.js';
 import { createFlow, MAX_DICE } from './flow.js';
 import { initInput } from './input/index.js';
+import { on } from './core/bus.js';
 import { add as addRaf } from './core/raf.js';
+import { PHYSICS } from './config.js';
+import { MATERIAL_IDS } from './materials.js';
+
+// ── 感官层 ──
+import {
+  unlock as unlockAudio,
+  getContext,
+  setSfxVolume,
+  setAmbVolume,
+  setMuted,
+  getStats as audioStats,
+} from './audio/engine.js';
+import { warmup as warmupSfx, useMaterial as setSfxMaterial, clearVoices, getStats as sfxStats } from './audio/impact.js';
+import { bakeIdle } from './audio/bake.js';
+import { createAmbience, AMB_LEVELS } from './audio/ambience.js';
+import {
+  probe as probeHaptics,
+  isAvailable as isHapticsAvailable,
+  impact as hapticImpact,
+  settle as hapticSettle,
+  setEnabled as setHapticsEnabled,
+  handleVisibility as hapticsVisibility,
+  getStats as hapticStats,
+} from './haptics.js';
+import {
+  enable as enableShake,
+  suppress as suppressShake,
+  getStats as shakeStats,
+} from './input/shake.js';
 import { buildShell } from './ui/shell.js';
 import { initChips } from './ui/chips.js';
 import { initResultCard } from './ui/result-card.js';
@@ -127,8 +158,45 @@ function wireGate() {
     gate.classList.add('gone');
     // 淡出之后再移除，否则按钮会"啪"地消失
     setTimeout(() => gate.remove(), 600);
+
+    // ⚠️ 必须在手势的**同步栈**里跑完，而且要在 start() 之前 ——
+    //    start() 里的建场景、造骰子、预编译是几十到几百毫秒的同步计算，
+    //    放在它后面的话手势激活可能已经被耗掉了。见 unlockSenses 的注释
+    unlockSenses();
     start();
   }, { once: true });
+}
+
+/**
+ * 三样只有用户手势才能拿到的东西：音频上下文、震动探针、运动授权。
+ *
+ * ⚠️ 它们必须落在**同一个同步栈**里，理由各不相同：
+ *    ① AudioContext 在非手势栈里建会被某些浏览器建在 suspended 状态；
+ *    ② navigator.vibrate 在部分 Android 上要求 sticky activation；
+ *    ③ iOS 的 DeviceMotionEvent.requestPermission() 会拒绝非手势调用。
+ *
+ * ⚠️ 三步的顺序不能变：音频排第一。它的 create() + resume() 是这里
+ *    唯一有真实耗时的（首次要建音频线程），放最后可能已经被前两步
+ *    挤出激活窗口。震动和运动授权只是几十微秒的调用。
+ *
+ * 任何一步失败都**只降级**：没有声音就静音掷，没有马达就不震，
+ * 运动被拒就只留滑动和点击。这条链上没有一个 return。
+ */
+function unlockSenses() {
+  unlockAudio();
+
+  // 探针。navigator.vibrate 存在 ≠ 真的会震（有些平板有 API 没马达），
+  // 而"API 存在但一调就抛"的设备只有真调一次才知道
+  if (settings.hapticsOn && caps.canVibrate) probeHaptics();
+
+  // enable() 是 async，但 requestPermission() 落在第一个 await 之前，
+  // 所以同步调它就等于在栈里发出请求。故意不 await ——
+  // 等授权结果会把 start() 推到手势之外
+  if (caps.canMotion) {
+    enableShake().catch(() => {
+      /* enable 自己绝不 reject，这里是第二道保险 */
+    });
+  }
 }
 
 function boot() {
@@ -153,6 +221,9 @@ function boot() {
     save(settings);
   };
 
+  // senses 要在 chips 之前拿到：换材质的回调里要用它
+  const senses = createSenses();
+
   // 骰子飞在半空时重建会留下一地残影，所以只在静置状态接受改动。
   // chips 自己不禁用 —— 禁用了要等一局结束才生效，那更让人困惑
   const canChange = () => flow.state === 'IDLE' || flow.state === 'RESULT';
@@ -163,6 +234,8 @@ function boot() {
       if (settings.material === id || !canChange()) return;
       settings.material = id;
       applyChange();
+      // 换了材质，碰撞音要跟着换 —— 不然玉石的骰子会一直用塑料的声音
+      senses.useMaterial(id);
     },
     onCount: (delta) => {
       const next = clamp(settings.diceCount + delta, 1, MAX_DICE);
@@ -190,6 +263,7 @@ function boot() {
         flow: flow.state,
         dice: dice.length,
         physMs: lastPhysMs,
+        extra: formatSenses(senses.getStats()),
       }),
     });
     attachDebugToggle(panel.el);
@@ -229,6 +303,162 @@ function boot() {
   }
 
   console.log(`[main] 就绪 · tier=${caps.tier} · ${caps.canVibrate ? '可震动' : '无震动'}`);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 感官层接线：声音、震动、甩动
+//
+// 这一段全是**策略**，不是机制。模块自己只管"怎么发声"、"怎么震"、
+// "怎么从加速度里认出一次甩动"；"什么时候该发"在这里定。
+// 写在 main.js 而不是某个模块里，是因为模块之间不许互相 import ——
+// 它们只通过 bus 说话，装配点才认识所有人。
+// ─────────────────────────────────────────────────────────────
+
+function createSenses() {
+  // 把设置里的初值套上。P3 的设置面板之后从这里改
+  setSfxVolume(settings.sfxVolume);
+  setAmbVolume(settings.ambienceVolume);
+  setMuted(!settings.soundOn);
+  // ⚠️ 震动开关取 `用户设置 && 探针结果`。用户开了但设备没马达时
+  //    开关保持关闭 —— UI 据此决定要不要显示这一项
+  setHapticsEnabled(settings.hapticsOn && isHapticsAvailable());
+
+  const ctx = getContext();
+  const wantSound = !!ctx && settings.soundOn;
+
+  let ambience = null;
+  if (wantSound) {
+    // 当前材质的碰撞音**现在就得烘**，不能等第一次投掷 ——
+    // 烘一份要几十毫秒，那段时间里掷出去的骰子是哑的
+    warmupSfx(settings.material, ctx).catch((err) => {
+      console.warn('[main] 碰撞音烘焙失败，本次会话无声', err);
+    });
+    // 其余材质交给空闲时间。用户切到哪种，哪种已经是热的
+    bakeIdle(MATERIAL_IDS, ctx);
+
+    if (settings.ambienceOn) {
+      ambience = createAmbience();
+      if (ambience) {
+        ambience.setKind(settings.ambienceKind);
+        ambience.start();
+        // 从 0 升上来，不是"啪"地开始。用户刚点完"开始"，
+        // 雨该像慢慢下起来，而不是被开关拨亮
+        ambience.fadeTo(AMB_LEVELS.IDLE, 1200);
+      }
+    }
+  }
+
+  // ── 碰撞 ──
+
+  // 碰撞音由 impact.js 自己订阅 'impact'（它 init() 过了），
+  // 这里只接震动 —— 所以不要在这里再 init 一次，那会双重订阅
+  on('impact', (e) => {
+    // 强度归一化成 0..1 再交给触觉：震动模块不认 m/s 这种单位，
+    // 它只要"这一下有多重"。不减去 impactMinSpeed —— 低于那个阈值的
+    // 碰撞根本不会发出来，所以起点本来就不在 0
+    hapticImpact(e.materialId, clamp(e.speed / PHYSICS.impactMaxSpeed, 0, 1));
+  });
+
+  // ── 投掷 ──
+
+  on('throw:start', ({ source }) => {
+    // 上一局的余音不该混进这一局
+    clearVoices();
+    // 点击/滑动掷完之后手还没停稳，那点晃动不该再触发一次甩动
+    if (source !== 'shake') suppressShake();
+  });
+
+  // ── 状态机 → 环境音 ──
+
+  on('flow:change', ({ to }) => {
+    if (!ambience) return;
+    // SETTLING 没有自己的档位 —— 它就是"淡出到揭晓的 0"。
+    // 斜坡长度取 pauseMs：声音正好在结果浮出来那一刻散尽，
+    // 这 600ms 的空白是节奏本身，不是等待
+    const level = to === 'SETTLING' ? AMB_LEVELS.RESULT : AMB_LEVELS[to];
+    if (level === undefined) return;
+
+    // ⚠️ ambience 切后台会自己停，而且**故意不自动恢复** ——
+    //    恢复点就在这里（见 ambience.js 的 onVisibility）。
+    //    少了这一句，用户切出去再切回来之后整局静音，直到刷新页面。
+    //    start() 幂等，正常路径下是空操作
+    if (level > 0) ambience.start();
+
+    ambience.fadeTo(level, to === 'SETTLING' ? settings.pauseMs : 220);
+  });
+
+  // ── 落定 → 触觉签名 ──
+
+  on('dice:settled', () => {
+    // 三连脉冲。用户不看屏幕也知道结果出来了
+    hapticSettle(settings.material);
+  });
+
+  // ── 甩动 ──
+
+  on('shake:arming', () => flow.go('ARMING'));
+  on('shake:disarm', () => flow.go('IDLE'));
+  on('shake:throw', ({ power }) => {
+    // 甩动没有屏幕方向可言，dirX/dirZ 留 0（力全部落在竖直面上）
+    flow.toss({ power, dirX: 0, dirZ: 0, source: 'shake' });
+  });
+
+  // setEnergy 内部是 setTargetAtTime。每秒调 60 次等于每秒排 60 个
+  // 自动化事件，而输入本身已经被 200ms 平滑过了 —— 值几乎不动。
+  // 降到 ~10Hz 就够，省下的是音频线程上的无谓工作
+  let lastEnergyAt = 0;
+  on('shake:energy', ({ level }) => {
+    const now = performance.now();
+    if (now - lastEnergyAt < 100) return;
+    lastEnergyAt = now;
+    ambience?.setEnergy(level);
+  });
+
+  // 手机揣兜里不该还一震一震的 —— 用户会以为程序出问题了
+  document.addEventListener('visibilitychange', hapticsVisibility);
+
+  return {
+    /**
+     * 换材质。碰撞音要跟着换，不然玉石的骰子会一直用塑料的声音。
+     * 烘是异步的，烘好之前 impact.js 会静默跳过 —— 那是对的：
+     * 补一声迟到的闷响比不响更糟。
+     */
+    useMaterial(id) {
+      if (!ctx) return;
+      setSfxMaterial(id);
+      warmupSfx(id, ctx).catch(() => {});
+    },
+    getStats() {
+      return {
+        ...audioStats(),
+        ...sfxStats(),
+        ...hapticStats(),
+        shake: shakeStats(),
+        amb: ambience?.getStats(),
+      };
+    },
+  };
+}
+
+/**
+ * `?debug=1` 里感官层那两行。
+ *
+ * 压成两行是有意的：这个面板贴在小屏手机上，多一行就盖住一颗骰子。
+ * 每个字段都是**光看界面看不出来**的东西 —— 声部的并发数（泄漏时
+ * 会一直涨）、环境音的实际增益对目标增益（斜坡卡住时两者不收敛）、
+ * 震动是不是被限流或退避了、甩动停在哪个状态。
+ */
+function formatSenses(st) {
+  const a = st.amb;
+  const amb = a ? `${a.kind} ${a.gain}/${a.target} ${a.liveDrops}滴` : '环境音关';
+  const hap = st.available ? (st.enabled ? `震${st.calls}` : '震关') : '无马达';
+  const sh = st.shake;
+  // 上下文状态排在最前：声音不出来时第一个要问的就是这个 ——
+  // 是 ctx 没跑（suspended），还是跑了但增益是 0，两者处理完全不同。
+  // 后面 `p` 是累计播放数（见 impact.js 的 playedTotal），"未烘"是
+  // 波形还没造好 —— 这个状态下 impact 是静默跳过的
+  const sfx = `${st.live}/${st.max} p${st.played}${st.ready ? '' : ' 未烘'}`;
+  return `音 ${st.state} · sfx ${sfx} · ${amb}\n${hap} · 甩 ${sh.state} ${sh.permission} e${sh.energy} l${sh.level}`;
 }
 
 let lastPhysMs = 0;

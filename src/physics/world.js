@@ -4,6 +4,7 @@
 
 import * as CANNON from 'cannon-es';
 import { PHYSICS, SCENE } from '../config.js';
+import { emit } from '../core/bus.js';
 import { MATERIAL_IDS, getMaterial, blendContact } from '../materials.js';
 
 let world = null;
@@ -162,7 +163,7 @@ function buildTray(w) {
  *    用户只会觉得"卡"，不会觉得"金属真沉"。
  *    重量感应该靠角阻尼和声音表达，不靠质量。
  */
-export function createDieBody(materialId) {
+export function createDieBody(materialId, slot = 0) {
   const p = getMaterial(materialId).physics;
   const h = PHYSICS.dieHalf;
 
@@ -178,7 +179,42 @@ export function createDieBody(materialId) {
   });
 
   body.angularVelocity.set(0, 0, 0);
+  body.slot = slot;
+  attachImpactReporter(body, materialId);
   return body;
+}
+
+/**
+ * 碰撞 → 'impact' 事件。物理层只报告"撞了、多快、在哪"，
+ * 不知道有没有声音、要不要震 —— 那些是订阅方的事。
+ *
+ * ⚠️ 用 WeakMap 存去抖时间戳，不挂到 body 上。
+ *    body 是 cannon 的对象，我们往里塞自定义属性（slot 除外，
+ *    那个是身份）会让后面读代码的人分不清哪些字段是 cannon 的。
+ */
+const lastImpactAt = new WeakMap();
+
+function attachImpactReporter(body, materialId) {
+  body.addEventListener('collide', (e) => {
+    const speed = Math.abs(e.contact.getImpactVelocityAlongNormal());
+    if (speed < PHYSICS.impactMinSpeed) return;
+
+    // 去抖。一次真实撞击会在连续几个物理步里持续接触，
+    // 不去抖就是同一个撞击响三四声，听起来像"咔咔咔"
+    const now = performance.now();
+    const last = lastImpactAt.get(body) || 0;
+    if (now - last < PHYSICS.impactDebounceMs) return;
+    lastImpactAt.set(body, now);
+
+    emit('impact', {
+      slot: body.slot,
+      materialId,
+      speed,
+      // 位置用来做声场定位：骰子在托盘左边就在左边响。
+      // 归一化到 -1..1，消费方不用再知道托盘多大
+      pan: Math.max(-1, Math.min(1, body.position.x / SCENE.trayHalf)),
+    });
+  });
 }
 
 export function stepWorld(dt) {

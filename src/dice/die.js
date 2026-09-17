@@ -93,7 +93,9 @@ export function createDie({ materialId, slot, world, name = '' }) {
   pipMesh.receiveShadow = true;
   bodyMesh.add(pipMesh);
 
-  const body = createDieBody(materialId);
+  // slot 要传下去：碰撞事件靠它认出是哪一颗，声音才能按材质分，
+  // 声场定位也才能对上屏幕上那颗骰子
+  const body = createDieBody(materialId, slot);
   world.addBody(body);
 
   const die = {

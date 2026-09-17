@@ -64,6 +64,12 @@ const child = spawn(EDGE, [
   // 不开这两个开关的话 canvas 会直接是黑的
   '--enable-unsafe-swiftshader',
   '--use-angle=swiftshader',
+  // ⚠️ 音频同理：这里的"开始"是脚本点的，不算用户手势，于是
+  //    AudioContext 会一直卡在 suspended —— currentTime 不前进，
+  //    所有 linearRampToValueAtTime 都停在起点、碰撞音一律静默跳过。
+  //    不开这个开关的话，声音这一层在测试里**根本跑不到**，
+  //    调试面板上看到的 gain 永远是 0，看着像接线错了。
+  '--autoplay-policy=no-user-gesture-required',
   'about:blank',
 ], { stdio: 'ignore' });
 
@@ -183,8 +189,13 @@ try {
 
   await sleep(waitMs);
 
-  // 首页要点一下"开始"。自测页没有 gate，点不到就算了
-  if (!query) await startApp(send);
+  // 首页要点一下"开始"。自测页没有 gate，点不到就算了。
+  // ⚠️ 判据是"有没有 selftest"，不是"query 是不是空串" —— 后者会让
+  //    ?debug=1 这种带参数的正常页面也跟着跳过点击，于是永远停在
+  //    "开始"，看不到要调的那个面板
+  if (!new URLSearchParams(query.replace(/^\?/, '')).has('selftest')) {
+    await startApp(send);
+  }
 
   if (diceCount) {
     // 第 6 个参数是"调到几颗"，不是点几下。从标签读当前值再算差值，

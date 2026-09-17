@@ -11,6 +11,8 @@
  */
 
 import { renderForTest, measure, INTENSITY_LEVELS, VARIANTS_PER_LEVEL } from '../src/audio/bake.js';
+import { pickLevel } from '../src/audio/impact.js';
+import { PHYSICS } from '../src/config.js';
 import { MATERIAL_IDS, MATERIALS } from '../src/materials.js';
 
 let fail = 0;
@@ -193,6 +195,41 @@ for (const id of MATERIAL_IDS) {
 }
 ok('最高分音低于 44.1k 奈奎斯特', worstHz < 22050,
    `最高 ${MATERIALS[worstId].label} ${Math.round(worstHz)}Hz`);
+
+// ── 8. 速度 → 强度档的映射 ──
+//
+// pickLevel 是纯函数，能在 Node 里直接测 —— 这正是它被单独抽出来的原因。
+// 这里最容易出的错是**边界归属**：档与档之间差一格，用户不会觉得
+// "分错了"，只会觉得"有时候撞击声怪怪的"，几乎无从复现。
+console.log('\n── 速度 → 强度档边界 ──\n');
+const lo = PHYSICS.impactMinSpeed, hi = PHYSICS.impactMaxSpeed;
+const span = hi - lo;
+const bounds = [lo, lo + span / 3, lo + span * 2 / 3, hi];
+console.log(`阈值 ${lo} 上界 ${hi} → 分界点 ${bounds.map(b => b.toFixed(2)).join(' / ')}`);
+
+ok('刚过阈值是最轻档', pickLevel(lo) === 0, `v=${lo}`);
+ok('阈值以下也安全返回 0', pickLevel(0.1) === 0);
+ok('第一分界点进入中档', pickLevel(bounds[1]) === 1, `v=${bounds[1].toFixed(2)}`);
+ok('第一分界点前一丁点仍在轻档', pickLevel(bounds[1] - 0.001) === 0);
+ok('第二分界点进入重档', pickLevel(bounds[2]) === 2, `v=${bounds[2].toFixed(2)}`);
+ok('第二分界点前一丁点仍在中档', pickLevel(bounds[2] - 0.001) === 1);
+ok('远超高上界仍是重档', pickLevel(50) === 2);
+ok('上界本身是重档', pickLevel(hi) === 2);
+
+// 三档的实际速度区间宽度必须相等。宽度不等的话某一档会挤掉大部分碰撞，
+// 用户听到的声音就只剩一两种，"三档"白做
+const widths = [bounds[1] - bounds[0], bounds[2] - bounds[1]];
+ok('前两档宽度相等', Math.abs(widths[0] - widths[1]) < 1e-9,
+   widths.map(w => w.toFixed(3)).join(' vs '));
+
+// 极端速度不能返回越界下标 —— 越界会读到 undefined 的 buffer 变体，
+// 然后 AudioBufferSourceNode.buffer = undefined 在部分浏览器上是抛异常
+let everOut = false;
+for (let v = 0; v <= 40; v += 0.05) {
+  const lv = pickLevel(v);
+  if (!Number.isInteger(lv) || lv < 0 || lv >= INTENSITY_LEVELS) { everOut = true; break; }
+}
+ok('全速度域内档位合法', !everOut);
 
 console.log(fail ? `\n✗ ${fail} 项失败` : '\n✓ 全部通过');
 process.exit(fail ? 1 : 0);
