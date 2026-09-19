@@ -326,6 +326,15 @@ try {
 async function doGesture(send, kind) {
   const x = 195;
 
+  if (kind === 'settings') {
+    // 打开编辑页。编辑页没有独立 URL，只能从主页面点 #settings 进去
+    await send('Runtime.evaluate', {
+      expression: `document.getElementById('settings')?.click()`,
+    });
+    await sleep(900);
+    return;
+  }
+
   // 虚按：按住不动 600ms（长按阈值 380ms），面板浮出后截图。
   // 这条路径最容易出的 bug 是"松手时把骰子投出去了"，
   // 所以这里按住不放，截图时手指还在屏幕上

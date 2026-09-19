@@ -22,7 +22,9 @@ export function buildShell(root, caps) {
       <div class="result" id="result" aria-live="polite"></div>
       <p class="hint" id="hint"></p>
     </div>
-    <div class="peek" id="peek" hidden></div>
+    <!-- 显示/隐藏由 .peek / .peek.on 的 opacity 控制，不能带 hidden：
+         hidden 的 UA 样式 display:none 不被任何规则覆盖，带上了标注就永远出不来 -->
+    <div class="peek" id="peek"></div>
     <button class="corner-btn" id="settings" type="button" aria-label="设置">
       <span class="corner-dot"></span>
     </button>
